@@ -248,7 +248,7 @@ class tec:
         self.df_obs = obs.to_dataframe()
         self.df_obs.index.set_names(["time","sv"],inplace=True)
         self.df_obs.reset_index(level=["sv"],inplace=True)
-        print (self.df_obs.index)
+        #print (self.df_obs.index)
         self.df_obs.index = pd.to_datetime(self.df_obs.index)
 
         # List satellites seen by the station

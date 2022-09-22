@@ -179,7 +179,7 @@ class gnss:
 
         # Create buffer directory if does not exist to store satellite
         # positions
-        #if not os.path.exists(dir_sats): os.makedirs(dir_sats)
+        if not os.path.exists(dir_sats): os.makedirs(dir_sats)
 
         #self.f_rinex_nav = f_rinex_nav
 
@@ -199,22 +199,31 @@ class gnss:
     def getPos(self,sat,date):
         doy = str(date.timetuple().tm_yday)
         year = str(date.year)
+        if len(self.nav_sats[sat])==0 or date<self.nav_sats[sat].index[0]:
+            nav_dir = st.root_dir + year+"/"+ doy +"/" + "GPS/"
+            csv_file = "ade30700.22n"
+                  
+            
+
+    def getPos_old(self,sat,date):
+        doy = str(date.timetuple().tm_yday)
+        year = str(date.year)
         #gps_dir = root_dir + year+ "/"+ doy
         if len(self.nav_sats[sat])==0 or date<self.nav_sats[sat].index[0]:
-            csv_nav_dir = st.root_dir + year+"/"+ doy +"/" + "GPS/" + sat + "/"
-            print (csv_nav_dir)
+            csv_nav_dir = st.root_dir + year+"/"+ doy +"/" + "GPS/"
+            print (csv_nav_dir) 
             if not os.path.exists(csv_nav_dir):  
-                print ("make csv 1", date)
+                print ("make CSV ", date)
                 makeCSV(date)
             nav_csv_files = [f for f in listdir(csv_nav_dir) if isfile(join(csv_nav_dir, f))]
+            print (nav_csv_files)
             while (len(nav_csv_files)==0):
                 doy=str(int(doy)-1)
-                csv_nav_dir = st.root_dir + year+"/"+ doy +"/" + "GPS/" + sat + "/"
-                if not os.path.exists(csv_nav_dir):  
-                    print ("make csv 2", date)
-                    makeCSV(date)
+                csv_nav_dir = st.root_dir + year+"/"+ doy +"/" + "GPS/"
+                if not os.path.exists(csv_nav_dir):  makeCSV(date)
                 nav_csv_files = [f for f in listdir(csv_nav_dir) if isfile(join(csv_nav_dir, f))]
             csv_nav = csv_nav_dir+nav_csv_files[0]
+            print (self.nav_sats)
             self.nav_sats[sat] = pd.read_csv(csv_nav)
             self.nav_sats[sat]["time"]=pd.to_datetime(self.nav_sats[sat]["time"])
             self.nav_sats[sat].set_index("time",inplace=True)
@@ -241,28 +250,26 @@ class gnss:
 
 
 def resetCSV(date):
-    #gps_dir = dir_rinex_nav+"GPS/"
-
-    gps_dir = st.root_dir + str(date.year)+"/"+ str(date.timetuple().tm_yday) +"/GPS/"
-    print ("In resetcsv",gps_dir)
-    try: os.mkdir(gps_dir)
-    except OSError as e:
-        if e.errno!=17: print ("FAIL creation of directory "+gps_dir, e )
-    else: print ("Successfully created the directory "+gps_dir)
-    for n_sat in range(1,33):
-        if n_sat<10: sat = "G0" + str(n_sat)
-        else: sat = "G" + str(n_sat)
-        sat_dir = gps_dir+sat
-        try: os.mkdir(sat_dir)
-        except OSError as e:
-            if e.errno!=17: print ("FAIL creation of directory "+gps_dir, err)
-        else: print ("Successfully created the directory "+sat_dir)
-        for filename in os.listdir(sat_dir):
-            file_path = os.path.join(sat_dir, filename)
-            try:
-                if os.path.isfile(file_path) or os.path.islink(file_path): os.unlink(file_path)
-                elif os.path.isdir(file_path): shutil.rmtree(file_path)
-            except Exception as e: print('Failed to delete %s. Reason: %s' % (file_path, e))
+	#gps_dir = dir_rinex_nav+"GPS/"
+	gps_dir = st.root_dir + str(date.year)+"/"+ str(date.timetuple().tm_yday) +"/GPS/"
+	try: os.mkdir(gps_dir)
+	except OSError as e:
+		if e.errno!=17: print ("FAIL creation of directory "+gps_dir, e )
+	else: print ("Successfully created the directory "+gps_dir)
+	for n_sat in range(1,33):
+		if n_sat<10: sat = "G0" + str(n_sat)
+		else: sat = "G" + str(n_sat)
+		sat_dir = gps_dir+sat
+		try: os.mkdir(sat_dir)
+		except OSError as e:
+			if e.errno!=17: print ("FAIL creation of directory "+gps_dir, err)
+		else: print ("Successfully created the directory "+sat_dir)
+		for filename in os.listdir(sat_dir):
+			file_path = os.path.join(sat_dir, filename)
+			try:
+				if os.path.isfile(file_path) or os.path.islink(file_path): os.unlink(file_path)
+				elif os.path.isdir(file_path): shutil.rmtree(file_path)
+			except Exception as e: print('Failed to delete %s. Reason: %s' % (file_path, e))
 
 def get_pos_antenna(station,year,doy):
     df_antennas = pd.read_csv(st.root_dir+str(year)+"/"+str(doy)+"/antennas.csv")
@@ -309,37 +316,28 @@ def getIonosphereIntersec(pos_antena,pos_sat,h=400000):
 
 def makeCSV(date):
     resetCSV(date)
-    gps_dir = st.root_dir + str(date.year)+"/"+ str(date.timetuple().tm_yday)+"/GPS"
-
-    print ("in makecsv", gps_dir)
+    gps_dir = st.root_dir + str(date.year)+"/"+ str(date.timetuple().tm_yday)
 
     doy = str(date.timetuple().tm_yday)
     while len(doy)<3: doy = "0" + doy
     year = str(date.year)
 	#i_c = 0
-    print ("in make csv",doy,year)
 
-    print ("in make csv", os.listdir(gps_dir))
 	#print (dir_rinex_nav)
     for file_nav in os.listdir(gps_dir):
-        print (file_nav)
         if file_nav[-1]!="n":
             continue
         pos_file_nav = gps_dir+"/"+file_nav
-        print (pos_file_nav)
 
         station = file_nav[:4]
         try:
             nav = gr.load(pos_file_nav)
         except ValueError:
             continue
-        print (nav)
         data = nav.sel(method='pad')
-        print (data)
 
         #sat_date = date.strftime("_%Y%m%d")
         for sat in nav.coords["sv"].values:
-            print (sat)
             csv_file = gps_dir + "/GPS/" + sat + "/"+station+".csv"
             d_csv = {"time":[],"Toe":[],"TGD":[],"IDOT":[],"IODC":[],
 						"GPSWeek":[],"TransTime":[],"SVclockBias":[],"SVclockDrift":[],
@@ -349,14 +347,12 @@ def makeCSV(date):
 						"Crs":[],"Crc":[],"Cic":[]}
 
             nav_time_coords = nav.sel(sv=sat).to_dataframe().dropna().index.tolist()
-            print (nav_time_coords)
 
             for t in nav_time_coords:
                 data = nav.sel(sv=sat,time=t,method='pad')
                 if (math.isnan(data['Eccentricity'].values)): continue
                 for k in d_csv.keys(): d_csv[k].append(data[k].values)
             if len(d_csv["time"])<2: continue
-            print (d_csv)
             pd.DataFrame(d_csv).to_csv(csv_file,index=False)
 
 
@@ -510,7 +506,6 @@ def getBias(sat,date,mode="P1P2"):
 
 def getBias_fromfile(sat,f_bias):
     path_local_file = f_bias
-    print (path_local_file)
     f = open(path_local_file)
     for lin in f:
          splt_lin = lin.split()

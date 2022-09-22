@@ -10,7 +10,7 @@ st.resume_station(2020,force=False)
 year=2020
 
 
-def compute_tec(f_rinex):
+def compute_tec(f_rinex,f_feather):
     # Access observation RINEX file
     print (f_rinex)
     tec_station = tec.tec(f_rinex)
@@ -20,9 +20,9 @@ def compute_tec(f_rinex):
     tec_station.add_satellite_pos()
     print ("HOLAHOLA!!!!")
 
-    tec_station.add_baseline()
+    tec_station.add_baseline(f_bias="./example/P1P22203.DCB")
     tec_station.add_receiver_bias()
-
+    tec_station.to_feather(f_feather)
 
 i=0
 list_stations = []
@@ -49,7 +49,7 @@ for station in list_stations:
         # Case feather file already exists, go for next doy
         if os.path.exists(f_feather): continue
         if os.path.exists(f_rinex):
-            compute_tec(f_rinex)
+            compute_tec(f_rinex,f_feather)
 
 
 

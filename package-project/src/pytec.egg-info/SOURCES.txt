@@ -2,14 +2,9 @@ README.rst
 setup.cfg
 setup.py
 pytec/__init__.py
-pytec/dst.py
 pytec/gnss.py
-pytec/kp.py
-pytec/omni.py
-pytec/sdo.py
+pytec/gnss2.py
 pytec/stations.py
-pytec/sunspots.py
-pytec/swpc.py
 pytec/tec.py
 pytec.egg-info/PKG-INFO
 pytec.egg-info/SOURCES.txt

@@ -1024,8 +1024,27 @@ class tec:
         #self.df_obs[["sv","lat","lon","elevation","STEC_slp","STEC_sl","VTEC"]].reset_index().to_feather(st.root_dir+"feather/"+self.station+".feather")
 
     def to_feather(self, f_feather):
+        print ("create feather file", f_feather)
         self.df_obs[["sv","lat","lon","elevation","STEC_slp","STEC_sl","VTEC"]].reset_index().to_feather(f_feather)
         #self.df_obs[["sv","lat","lon","elevation","STEC_slp","STEC_sl","VTEC"]].reset_index().to_feather(st.root_dir+str(self.year)+"/"+str(self.doy)+"/"+self.station+".feather")
         #self.df_obs[["sv","lat","lon","elevation","STEC_slp","STEC_sl","VTEC"]].reset_index().to_csv(st.root_dir+"csv/"+self.station+".csv")
 
 
+
+def rinex_to_feather(f_rinex="",f_bias=""):
+    if not isfile(f_rinex): print ("rinex file location not found, nothing to process")
+    tec_station = tec(f_rinex)
+    if not tec_station.rinex_to_stec(60): return
+    tec_station.add_satellite_pos()
+
+    
+    if not isfile(f_bias): print ("bias file location not found, will take 0, might affect strongly the results")
+    tec_station.add_baseline(f_bias="./example/P1P22203.DCB")
+    tec_station.add_receiver_bias()
+    f_feather = f_rinex[:-4]+"tec.feather"
+    #if not isfile(f_feather):
+    #    print (f_feather)
+    #    f_feather = f_rinex[:-8]+".feather"
+    #    print ("feather file location not found, nothing to process")
+    tec_station.to_feather(f_feather)
+    

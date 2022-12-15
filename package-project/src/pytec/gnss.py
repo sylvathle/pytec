@@ -207,13 +207,14 @@ class gnss:
                 print ("make csv 1", date)
                 makeCSV(date)
             nav_csv_files = [f for f in listdir(csv_nav_dir) if isfile(join(csv_nav_dir, f))]
-            while (len(nav_csv_files)==0):
-                doy=str(int(doy)-1)
-                csv_nav_dir = st.root_dir + year+"/"+ doy +"/" + "GPS/" + sat + "/"
-                if not os.path.exists(csv_nav_dir):  
-                    print ("make csv 2", date)
-                    makeCSV(date)
-                nav_csv_files = [f for f in listdir(csv_nav_dir) if isfile(join(csv_nav_dir, f))]
+            #while (len(nav_csv_files)==0):
+            #    doy=str(int(doy)-1)
+            #    csv_nav_dir = st.root_dir + year+"/"+ doy +"/" + "GPS/" + sat + "/"
+            #    if not os.path.exists(csv_nav_dir):  
+            #        print ("make csv 2", date)
+            #        makeCSV(date)
+            #    nav_csv_files = [f for f in listdir(csv_nav_dir) if isfile(join(csv_nav_dir, f))]
+            if len(nav_csv_files)==0: return [float("nan"),float("nan"),float("nan")]
             csv_nav = csv_nav_dir+nav_csv_files[0]
             self.nav_sats[sat] = pd.read_csv(csv_nav)
             self.nav_sats[sat]["time"]=pd.to_datetime(self.nav_sats[sat]["time"])
@@ -340,7 +341,8 @@ def makeCSV(date):
         #sat_date = date.strftime("_%Y%m%d")
         for sat in nav.coords["sv"].values:
             print (sat)
-            csv_file = gps_dir + "/GPS/" + sat + "/"+station+".csv"
+            #csv_file = gps_dir + "/GPS/" + sat + "/"+station+".csv"
+            csv_file = gps_dir + "/" + sat + "/"+station+".csv"
             d_csv = {"time":[],"Toe":[],"TGD":[],"IDOT":[],"IODC":[],
 						"GPSWeek":[],"TransTime":[],"SVclockBias":[],"SVclockDrift":[],
 						"SVclockDriftRate":[],"sqrtA":[],"Eccentricity":[],

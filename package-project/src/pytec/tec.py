@@ -1039,7 +1039,7 @@ def rinex_to_feather(f_rinex="",f_bias=""):
 
     
     if not isfile(f_bias): print ("bias file location not found, will take 0, might affect strongly the results")
-    tec_station.add_baseline(f_bias="./example/P1P22203.DCB")
+    tec_station.add_baseline(f_bias=f_bias)
     tec_station.add_receiver_bias()
     f_feather = f_rinex[:-4]+"tec.feather"
     #if not isfile(f_feather):

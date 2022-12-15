@@ -11,7 +11,7 @@ f_base = "/home/sylvain/Documents/spaceweather/tec/testingfolder/"
 
 f_rinex = f_base + "antc3490.20o"
 #f_feather = "/home/sylvain/Documents/spaceweather/tec/CSN_TEC/2020/349/AAtest.feather"
-f_bias = f_base + "P1P2203.DCB"
+f_bias = f_base + "P1P22203.DCB"
 
 tec.rinex_to_feather(f_rinex=f_rinex,f_bias=f_bias)
 

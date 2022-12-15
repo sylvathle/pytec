@@ -6,7 +6,7 @@ pip3 install -e ./
 popd
 
 echo; echo "Showing package info:"
-echo 'export RINEX_PATH="$HOME/Documents/spaceweather/tec/CSN_TEC/"' >> $HOME/.bashrc 
-source ~/.bashrc
+#echo 'export RINEX_PATH="$HOME/Documents/spaceweather/tec/CSN_TEC/"' >> $HOME/.bashrc 
+#source ~/.bashrc
 
 pip3 show pytec

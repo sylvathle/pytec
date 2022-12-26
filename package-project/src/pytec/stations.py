@@ -39,6 +39,9 @@ def resume_station(year,force=False):
     '''  Creates stations.csv that contains information about the navigation
     stations
     '''
+    
+    print ("LIST stations")
+    
     if path.exists(csv_stations) and not force: return
     year_folder = root_dir + str(year)+ "/"
     for f in listdir(year_folder):

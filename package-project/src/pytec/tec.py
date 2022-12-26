@@ -45,6 +45,8 @@ import time
 from . import stations as st
 from . import gnss
 
+pd.options.mode.chained_assignment = None
+
 # Earth Radius
 R_E = 6371000
 
@@ -281,15 +283,15 @@ class tec:
         #df_obs[["sv","lat","lon","elevation","L1","L2","P2","C1","STEC_slp","STEC_sll"]].reset_index().to_feather(st.root_dir+"feather/"+self.station+"_"+str(year)+str(doy)+".feather")
         #self.df_obs = pd.concat([self.df_obs,df])
 
-    def add_satellite_pos(self):
+    def add_satellite_pos(self,f_nav):
         #time_list =  self.df_obs.index
-        gps = gnss.gnss()
+        gps = gnss.gnss(f_nav)
 
         df_data = pd.DataFrame()
 
         for sat in self.sv:
 
-            print (sat)
+            #print (sat)
 
             # We extract information corresponding to satellite sat
             df_obs_sat = self.df_obs[self.df_obs["sv"]==sat]
@@ -316,7 +318,7 @@ class tec:
                 ele.append(el)
 
             # Set Latitude to dataframe
-            df_obs_sat['lat'] = pd.Series(lats,index=df_obs_sat.index)
+            df_obs_sat['lat'] = lats #pd.Series(lats,index=df_obs_sat.index)
             # Set Longitude to dataframe
             df_obs_sat['lon'] = pd.Series(lons,index=df_obs_sat.index)
             # Elevations
@@ -595,7 +597,7 @@ class tec:
             #if sat!="G01": continue
             #if not sat in ["G01","G02","G03"]: continue
             # Extract data of satellite sat
-            print (sat)
+            #print (sat)
 
             #df_filtered = pd.DataFrame()
             df_sat = df_data[df_data["sv"]==sat]
@@ -893,7 +895,7 @@ class tec:
         #df = pd.read_feather("feather/"+station+"_inter.feather").set_index("time")
         #print (df)
         # Convert dates index to datetime
-        print ("compute receiver bias")
+        #print ("compute receiver bias")
         df = self.df_obs.copy()
 
         # Remove rows with nan STEC_sl
@@ -999,7 +1001,7 @@ class tec:
             print (f"Warning: will null receiver bias")
             self.br=0
 
-        print (self.station,"bias",self.br)
+        #print (self.station,"bias",self.br)
         # Load data
         #if not os.path.exists("feather/"+self.station+"_inter.feather"): return
         #df = pd.read_feather("feather/"+self.station+"_inter.feather").set_index("time")
@@ -1020,31 +1022,41 @@ class tec:
         #plt.show()
         #plt.close()
         # Save to csv file
-        print (self.station)
+        #print (self.station)
         #self.df_obs[["sv","lat","lon","elevation","STEC_slp","STEC_sl","VTEC"]].reset_index().to_feather(st.root_dir+"feather/"+self.station+".feather")
 
     def to_feather(self, f_feather):
-        print ("create feather file", f_feather)
+        #print ("create feather file", f_feather)
         self.df_obs[["sv","lat","lon","elevation","STEC_slp","STEC_sl","VTEC"]].reset_index().to_feather(f_feather)
         #self.df_obs[["sv","lat","lon","elevation","STEC_slp","STEC_sl","VTEC"]].reset_index().to_feather(st.root_dir+str(self.year)+"/"+str(self.doy)+"/"+self.station+".feather")
         #self.df_obs[["sv","lat","lon","elevation","STEC_slp","STEC_sl","VTEC"]].reset_index().to_csv(st.root_dir+"csv/"+self.station+".csv")
 
 
 
-def rinex_to_feather(f_rinex="",f_bias=""):
-    if not isfile(f_rinex): print ("rinex file location not found, nothing to process")
-    tec_station = tec(f_rinex)
+def rinex_to_feather(f_obs="",f_nav="",f_bias=""):
+    if not isfile(f_obs): print ("rinex file location not found, nothing to process")
+    print ("Initialization")
+    print (" -- Loading observation file:", f_obs)
+    print (" -- Loading navigation file:",f_nav)
+    print (" -- Loading bias of satellite:", f_bias)
+    tec_station = tec(f_obs)
+    
+    print ("Converting code and pseudorange from observation rinex to slant tec")
     if not tec_station.rinex_to_stec(60): return
-    tec_station.add_satellite_pos()
+    
+    print ("Calculating satellite position from navigation rinex")
+    tec_station.add_satellite_pos(f_nav)
 
     
     if not isfile(f_bias): print ("bias file location not found, will take 0, might affect strongly the results")
+    
+    print ("Calculating baseline to correct Slant TEC")
     tec_station.add_baseline(f_bias=f_bias)
+    
+    print ("Calculating receiver bias, correct Slant TEC, compute VTEC")
     tec_station.add_receiver_bias()
-    f_feather = f_rinex[:-4]+"tec.feather"
-    #if not isfile(f_feather):
-    #    print (f_feather)
-    #    f_feather = f_rinex[:-8]+".feather"
-    #    print ("feather file location not found, nothing to process")
+    f_feather = f_obs[:-4]+"tec.feather"
+
+    print ("Save to feather:",f_feather)
     tec_station.to_feather(f_feather)
     

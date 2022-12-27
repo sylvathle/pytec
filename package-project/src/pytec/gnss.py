@@ -175,12 +175,8 @@ class gnss:
         for now it only works on GPS constellation, future version should deal
         with GLONASS
     '''
-    def __init__(self,f_nav=""):
-
-        # Create buffer directory if does not exist to store satellite
-        # positions
-        #if not os.path.exists(dir_sats): os.makedirs(dir_sats)
-        
+    def __init__(self,f_nav=[],resolution=60):
+     
         self.gps_dir = st.root_dir + "GPS/"
         if not os.path.exists(self.gps_dir):
             try: os.mkdir(self.gps_dir)
@@ -188,23 +184,198 @@ class gnss:
                 if e.errno!=17: print ("FAIL creation of directory "+self.gps_dir, e )
             else: print ("Successfully created the directory "+self.gps_dir)
 
-        self.f_rinex_nav = f_nav
-        print (int(f_nav[-8:-5]))
-        self.doy = int(f_nav[-8:-5])
-        print ("DOY in GNSS : ", self.doy)
-        self.nav_sats = {}
-        self.xyz_sats = {}
+        self.list_f_rinex_nav = f_nav
+        self.dict_df_pos = {}
+        self.resolution = resolution
+        self.compute_position(self.list_f_rinex_nav)
+
+
+    # Function that loads the satellite of a specific year, files must exist, otherwise load empty
+    def load_sats(self,year):
+    
         for i in range(1,33):
             #Name of the satellite
             sat = ""
             if i<10: sat = "G0"+str(i)
             else: sat = "G"+str(i)
 
-            self.nav_sats[sat]=pd.DataFrame()
+            sat_file = self.gps_dir + str(year) + "/" + sat + ".feather"
 
-            d_sat = {"time":[],"X":[],"Y":[],"Z":[],"elevation":[]}
-            self.xyz_sats[sat]=pd.DataFrame(d_sat).set_index("time")
+            if os.path.exists(sat_file):
+                self.dict_df_pos[sat] = pd.read_feather(sat_file)
+                self.dict_df_pos[sat].set_index("time",inplace=True)
+                self.dict_df_pos[sat].index = pd.to_datetime(self.dict_df_pos[sat].index)
+            else:
+                self.dict_df_pos[sat] = pd.DataFrame()
+
+       
+    # Function that compute the position of the satellites from the navigation file 
+    #   with the resolution informed when instanciating the gnss object
+    def compute_position(self,form='feather'):
+    
+        # Columns that need to be used
+        list_cols = ["Toe","TGD","IDOT","IODC","GPSWeek","TransTime","SVclockBias","SVclockDrift",\
+        "SVclockDriftRate","sqrtA","Eccentricity","Io","Omega0","omega","M0","DeltaN","OmegaDot","Cus","Cuc",\
+        "Cis","Crs","Crc","Cic"] 
+
+        for f_rinex_nav in self.list_f_rinex_nav:
+
+            rinex_doy = int(f_rinex_nav[-8:-5])
+            rinex_year = int("20"+f_rinex_nav[-3:-1])
+
+            # Construct path of satellite files and create directory if does not exists
+            year_gpsdir = self.gps_dir + str(rinex_year)
+            if not os.path.exists(year_gpsdir):
+                try: os.mkdir(year_gpsdir)
+                except OSError as e:
+                    if e.errno!=17: print ("FAIL creation of directory "+year_gpsdir, e )
+                    else: print ("Successfully created the directory "+year_gpsdir)    
             
+            #Annex file reporting doy that have been considered for each satellite
+            f_doy_reported = year_gpsdir + "/reported_doy.feather"
+            
+            
+            if not os.path.exists(f_doy_reported):
+                dict_doy_reported = {"sat":[],"res":[]}
+                for doy in range(366):
+                    dict_doy_reported[str(doy)] = []
+                for i in range(1,33):
+                    #Name of the satellite
+                    sat = ""
+                    if i<10: sat = "G0"+str(i)
+                    else: sat = "G"+str(i)
+                    dict_doy_reported["sat"].append(sat)
+                    dict_doy_reported["res"].append(self.resolution )
+                    for doy in range(366):
+                        dict_doy_reported[str(doy)].append(0)
+                pd.DataFrame(dict_doy_reported).to_feather(f_doy_reported)      
+
+            # Load report of already processed files in order to know which doy have been processed 
+            #   for each satellite and with which resolution
+            df_doy_reported = pd.read_feather(f_doy_reported)
+            df_doy_reported.set_index("sat",inplace=True)
+           
+            # Prepare time list that will be used
+            t_base = datetime.datetime(rinex_year,1,1,0,0,0,0)+datetime.timedelta(days=rinex_doy-1)
+            t=t_base
+            time_list = []
+            while t<t_base+datetime.timedelta(days=1):
+                time_list.append(t)
+                t += datetime.timedelta(seconds=self.resolution)
+
+        
+            # Load provided navigation file
+            try:
+                nav = gr.load(f_rinex_nav)
+                df_nav = nav.to_dataframe()
+            except ValueError:
+                print ("COuld not load file", f_rinex_nav)
+                continue
+                
+
+            # Make if friendly to use with dataframe
+            df_nav.index.set_names(["time","sv"],inplace=True)
+            df_nav.reset_index(level=["sv"],inplace=True)
+            df_nav.dropna(inplace=True)
+       
+            # Iter over all the satellites
+            for i in range(1,33):
+                #Name of the satellite
+                sat = ""
+                if i<10: sat = "G0"+str(i)
+                else: sat = "G"+str(i)
+
+                # flag to know if position of satellite has already been computed for this doy
+                is_doy_reported = df_doy_reported[str(rinex_doy)].loc[sat]==1
+            
+                # flag to know if the resolution is fine
+                is_res_enough = df_doy_reported["res"].loc[sat]<=self.resolution
+
+                # If this doy has been reported with enough time-resolution, got for next satellite
+                if is_doy_reported and is_res_enough: continue
+            
+                # import data of this satellite
+                df_sat_new = df_nav[df_nav["sv"]==sat][list_cols]          
+            
+                # If no data has been found for this satellite, go for next one without creating the feather
+                if len(df_sat_new)==0:
+                    print ("No position for satellite",sat)
+                    continue
+            
+                # File correponding to satellite of interest
+                csv_nav_sat = year_gpsdir + "/" + sat + ".feather"
+            
+                # Intermediate dictionnary intended to contain data of the satellite under process 
+                dict_sat_pos = {"time":[],"X":[],"Y":[],"Z":[]}
+            
+                # Iterator of time list of positions to be computed
+                i_time_list = 0
+                # Get first time
+                date = time_list[i_time_list]
+            
+                # Iter over the times available in the navigation file
+                for t_nav, row in df_sat_new.iterrows():
+                    # Calculate position for each time in time_list that are before the next available position information
+                    while date < t_nav and i_time_list<len(time_list):
+                        sat_pos = gps_nav_to_XYZ(row,date)
+                        dict_sat_pos["time"].append(date)
+                        dict_sat_pos["X"].append(sat_pos[0])
+                        dict_sat_pos["Y"].append(sat_pos[1])
+                        dict_sat_pos["Z"].append(sat_pos[2])
+                        i_time_list += 1
+                        if i_time_list==len(time_list): break
+                        date = time_list[i_time_list]
+                last_row = df_sat_new.iloc[-1]
+            
+                # Case novigation data does not provide position until 00:00, use last available date
+                while i_time_list<len(time_list):
+                    sat_pos = gps_nav_to_XYZ(last_row,date)
+                    dict_sat_pos["time"].append(date)
+                    dict_sat_pos["X"].append(sat_pos[0])
+                    dict_sat_pos["Y"].append(sat_pos[1])
+                    dict_sat_pos["Z"].append(sat_pos[2])
+                    i_time_list += 1
+                    if i_time_list==len(time_list): break
+                    date = time_list[i_time_list]
+            
+                df_sat_nav = pd.DataFrame(dict_sat_pos)
+                df_sat_nav.set_index("time",inplace=True)
+            
+                # Check if feather file is not already there in order not to use navigation file
+                if os.path.exists(csv_nav_sat):
+                    #print (csv_nav_sat, "file exist, concat with new results")
+                    df_sat_old = pd.read_feather(csv_nav_sat) 
+                    df_sat_old.set_index("time",inplace=True)
+                    df_sat_old.index = pd.to_datetime(df_sat_old.index)
+                    df_sat_nav = pd.concat([df_sat_nav,df_sat_old])
+                          
+                df_sat_nav.reset_index(inplace=True)
+                df_sat_nav.to_feather(csv_nav_sat)
+            
+                # Report that this doy has been treated with the corresponding resolution to avoid reprocessing
+                df_doy_reported[str(rinex_doy)].loc[sat]=1
+                df_doy_reported["res"].loc[sat]=self.resolution
+        
+            # Update report file
+            df_doy_reported.reset_index(inplace=True)
+            df_doy_reported.to_feather(f_doy_reported)
+            
+
+
+    # Read position from saved files
+    def getPos(self,sat,date):
+        if len(self.dict_df_pos[sat])==0: 
+            return [float("NaN"),float("NaN"),float("NaN")]
+
+        if date not in self.dict_df_pos[sat].index: 
+            return [float("NaN"),float("NaN"),float("NaN")]
+
+        pos = self.dict_df_pos[sat][["X","Y","Z"]].loc[date].tolist()
+
+        return pos            
+            
+            
+    #### Old function, should not be used anymore
     def to_CSV(self,date,feather=True):
         #resetCSV(date,feather)
         #print ("In resetcsv",gps_dir)
@@ -279,8 +450,8 @@ class gnss:
         df_doy_reported.reset_index(inplace=True)
         df_doy_reported.to_feather(f_doy_reported)
 
-
-    def getPos(self,sat,date):
+    #### Old function, should not be used anymore
+    def getPos2(self,sat,date):
         doy = str(date.timetuple().tm_yday)
         year = str(date.year)
         

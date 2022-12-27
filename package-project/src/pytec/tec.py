@@ -286,7 +286,7 @@ class tec:
     def add_satellite_pos(self,f_nav):
         #time_list =  self.df_obs.index
         gps = gnss.gnss(f_nav)
-
+        gps.load_sats(self.year)
         df_data = pd.DataFrame()
 
         for sat in self.sv:
@@ -308,6 +308,8 @@ class tec:
             lats,lons = [],[]
 
             for d in T:
+                
+                #sys.exit()
                 el, pos = gps.getElevation(sat,self.coord,d)
                 pos_ion=gnss.getIonosphereIntersec(self.coord,pos)
 
@@ -871,6 +873,7 @@ class tec:
 
         #df_filtered.reset_index().to_feather(st.root_dir+"feather/"+station+"_inter.feather")
         self.df_obs = df_filtered.copy()
+
         ## get arcs lists
         #if len(elevations)==0:
         #    print ("no satellite {sat}")
@@ -1027,6 +1030,7 @@ class tec:
 
     def to_feather(self, f_feather):
         #print ("create feather file", f_feather)
+        print (self.df_obs)
         self.df_obs[["sv","lat","lon","elevation","STEC_slp","STEC_sl","VTEC"]].reset_index().to_feather(f_feather)
         #self.df_obs[["sv","lat","lon","elevation","STEC_slp","STEC_sl","VTEC"]].reset_index().to_feather(st.root_dir+str(self.year)+"/"+str(self.doy)+"/"+self.station+".feather")
         #self.df_obs[["sv","lat","lon","elevation","STEC_slp","STEC_sl","VTEC"]].reset_index().to_csv(st.root_dir+"csv/"+self.station+".csv")

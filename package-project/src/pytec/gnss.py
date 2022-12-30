@@ -360,8 +360,6 @@ class gnss:
             df_doy_reported.reset_index(inplace=True)
             df_doy_reported.to_feather(f_doy_reported)
             
-
-
     # Read position from saved files
     def getPos(self,sat,date):
         if len(self.dict_df_pos[sat])==0: 

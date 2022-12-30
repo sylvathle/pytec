@@ -2,7 +2,7 @@
 import os
 import numpy as np
 
-from pytec import stations as st
+#from pytec import stations as st
 from pytec import tec
 import sys
 

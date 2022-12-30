@@ -10,3 +10,6 @@ echo; echo "Showing package info:"
 #source ~/.bashrc
 
 pip3 show pytec
+
+python3 ./package-consumer-project/consumepackage.py
+source ~/.bashrc

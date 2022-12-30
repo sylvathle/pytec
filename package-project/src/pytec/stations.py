@@ -31,7 +31,7 @@ import numpy as np
 from os import listdir, getenv, path
 from os.path import isfile, join
 
-root_dir = "/home/sylvain/Documents/spaceweather/tec/testingfolder/" #getenv("RINEX_PATH")
+root_dir = getenv("PYTEC_PATH",'.') + "/"
 #base_path = "/media/sblunier/CSN_TEC/"
 csv_stations = root_dir+"stations.csv"
 

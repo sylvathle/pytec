@@ -4,6 +4,7 @@ setup.py
 pytec/__init__.py
 pytec/gnss.py
 pytec/gnss2.py
+pytec/gnss_intent.py
 pytec/stations.py
 pytec/tec.py
 pytec.egg-info/PKG-INFO

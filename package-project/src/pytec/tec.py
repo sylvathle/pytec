@@ -197,6 +197,12 @@ class tec:
         # Bias of the antenna, calculated by method "compute_reveiver_bias"
         # Value stored in csv "stations.csv"
         self.br = 0
+        
+        if not os.path.exists(st.root_dir + "TEC/"):
+            try: os.mkdir(st.root_dir + "TEC/")
+            except OSError as e:
+                    if e.errno!=17: print ("FAIL creation of directory "+st.root_dir + "TEC/", e )
+            else: print ("Successfully created the directory "+st.root_dir + "TEC/")
 
     def rinex_to_stec(self,resolution=None):
         ''' Extract the relevant data for tec calculation from observation and navigation
@@ -962,7 +968,13 @@ class tec:
 
         d = {"station":[self.station],"br":[self.br]}
 
-        f_br = st.root_dir + str(self.year) + "/" + str(self.doy) + "/receiver_bias.csv"
+        f_br = st.root_dir + "TEC/" + str(self.year) + "/receiver_bias.csv"
+        if not os.path.exists(st.root_dir + "TEC/"+ str(self.year)):
+            try: os.mkdir(st.root_dir + "TEC/"+ str(self.year))
+            except OSError as e:
+                    if e.errno!=17: print ("FAIL creation of directory "+st.root_dir + "TEC/"+ str(self.year), e )
+            else: print ("Successfully created the directory "+st.root_dir + "TEC/"+ str(self.year))
+                    
         if os.path.exists(f_br):
             df_br = pd.read_csv(f_br).set_index("station")
             df_br = df_br[df_br.index!=self.station]
@@ -1029,12 +1041,7 @@ class tec:
         #self.df_obs[["sv","lat","lon","elevation","STEC_slp","STEC_sl","VTEC"]].reset_index().to_feather(st.root_dir+"feather/"+self.station+".feather")
 
     def to_feather(self, f_feather):
-        #print ("create feather file", f_feather)
-        print (self.df_obs)
         self.df_obs[["sv","lat","lon","elevation","STEC_slp","STEC_sl","VTEC"]].reset_index().to_feather(f_feather)
-        #self.df_obs[["sv","lat","lon","elevation","STEC_slp","STEC_sl","VTEC"]].reset_index().to_feather(st.root_dir+str(self.year)+"/"+str(self.doy)+"/"+self.station+".feather")
-        #self.df_obs[["sv","lat","lon","elevation","STEC_slp","STEC_sl","VTEC"]].reset_index().to_csv(st.root_dir+"csv/"+self.station+".csv")
-
 
 
 def rinex_to_feather(f_obs="",f_nav="",f_bias=""):

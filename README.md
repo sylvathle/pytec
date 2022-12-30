@@ -1,6 +1,34 @@
 # pytec
 Python library for Total Electron Content computing from Rinex files
 
+## Installation
+
+Go where you want pytec to be stored:
+```
+cd where/you/want/pytec/to/be/stored
+```
+Download the git repostory on your computer:
+```
+wget https://github.com/sylvathle/pytec.git
+```
+
+Clone it to get the folder structure:
+```
+git clone pytec.git
+```
+
+Remove the .git file
+``` 
+rm pytec.git
+```
+
+Install pytec following instructions. You will be asked to set up a repository so pytec can store intermediate the results. You can skip it but processes might take longer to compute:
+
+```
+cd pytec
+./install-devmode-package.sh
+```
+
 ## Paths
 Source and target files must be hosted in a folder which path is contained in a environment variable called RINEX\_PATH.
 It is recommended to save the RINEX\_PATH in the .bashrc file so that there will be no need to redefine at each new terminal session.

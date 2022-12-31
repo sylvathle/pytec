@@ -32,11 +32,11 @@ from os import listdir, getenv, path
 from os.path import isfile, join
 
 root_dir = getenv("PYTEC_PATH",'.') + "/"
-#base_path = "/media/sblunier/CSN_TEC/"
 csv_stations = root_dir+"stations.csv"
 
 def resume_station(year,force=False):
-    '''  Creates stations.csv that contains information about the navigation
+    '''  Function not coordinated by now with only code
+    Creates stations.csv that contains information about the navigation
     stations
     '''
     

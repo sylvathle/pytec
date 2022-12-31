@@ -33,6 +33,7 @@ import datetime
 import math
 import numpy as np
 import urllib.request
+import pymap3d as pm
 #from unlzw import unlzw
 
 import pandas as pd
@@ -167,7 +168,6 @@ def gps_nav_to_XYZ(data,date):
 
 dir_sats = "sats/"
 
-
 class gnss:
     '''
         gnss Class to perform eficiently the position and elevation of the
@@ -186,13 +186,17 @@ class gnss:
 
         self.list_f_rinex_nav = f_nav
         self.dict_df_pos = {}
+        self.df_pos = pd.DataFrame()
         self.resolution = resolution
         self.compute_position(self.list_f_rinex_nav)
 
 
     # Function that loads the satellite of a specific year, files must exist, otherwise load empty
-    def load_sats(self,year):
+    def load_sats(self,d_in,d_out):
     
+        year = d_in.year
+        first = True
+         
         for i in range(1,33):
             #Name of the satellite
             sat = ""
@@ -205,6 +209,16 @@ class gnss:
                 self.dict_df_pos[sat] = pd.read_feather(sat_file)
                 self.dict_df_pos[sat].set_index("time",inplace=True)
                 self.dict_df_pos[sat].index = pd.to_datetime(self.dict_df_pos[sat].index)
+                mask = (self.dict_df_pos[sat].index>=d_in) & (self.dict_df_pos[sat].index<=d_out)
+                self.dict_df_pos[sat]=self.dict_df_pos[sat].loc[mask]
+                if first:
+                    self.df_pos = self.dict_df_pos[sat]
+                    self.df_pos["sv"] = sat
+                    first = False
+                else:
+                    df_inter = self.dict_df_pos[sat]
+                    df_inter["sv"] = sat
+                    self.df_pos = pd.concat([self.df_pos,df_inter])
             else:
                 self.dict_df_pos[sat] = pd.DataFrame()
 
@@ -360,8 +374,83 @@ class gnss:
             df_doy_reported.reset_index(inplace=True)
             df_doy_reported.to_feather(f_doy_reported)
             
+
+        
+ 
+    
+    def getElevation(self,df,pos_antena):
+
+        norm_antena = np.linalg.norm(pos_antena)
+        
+        dfdif = pd.DataFrame()   
+        dfdif['Xdif'] = self.df_pos["X"]-pos_antena[0]
+        dfdif['Ydif'] = self.df_pos["Y"]-pos_antena[1]
+        dfdif['Zdif'] = self.df_pos["Z"]-pos_antena[2]
+
+        nv = pos_antena[0]*dfdif["Xdif"] + pos_antena[1]*dfdif["Ydif"] + pos_antena[2]*dfdif["Zdif"]
+        norm = norm_antena * np.linalg.norm(dfdif[['Xdif','Ydif','Zdif']].values,axis=1) 
+        
+        sin_phi = nv/norm
+        self.df_pos["elevation"] = np.arcsin(sin_phi)
+        return pd.merge(df,self.df_pos,how='left',on=['sv','time']) 
+
+
+    def getPiercingPoint(self,df,pos_antena,h=400000):
+        R_I = R_E + h
+        df_inter = pd.DataFrame()
+
+        #### Calculation of the position of the intersection of Satellite-Antena line with ionosphere which is a second degree equation
+        df_inter["Xas"] = df["X"]-pos_antena[0]
+        df_inter["Yas"] = df["Y"]-pos_antena[1]
+        df_inter["Zas"] = df["Z"]-pos_antena[2]
+        
+        # return elevation of satellite given the ID os the satellite, the position of the antenna.
+        df_inter["AS_squared"] = df_inter["Xas"]**2 + df_inter["Yas"]**2 + df_inter["Zas"]**2
+        #Parameters of the polynomial to solve
+        df_inter["b_poly"] = 2*df_inter["Xas"]*(pos_antena[0]*df_inter["Xas"] + pos_antena[1]*df_inter["Yas"] + pos_antena[2]*df_inter["Zas"])
+        df_inter["c_poly"] = df_inter["Xas"]**2 * ( pos_antena[0]**2 + pos_antena[1]**2+ pos_antena[2]**2 - R_I**2 )
+        df_inter["Delta"] = df_inter["b_poly"]**2 -4*df_inter["AS_squared"]*df_inter["c_poly"]
+        
+        df_inter["x_ion_1"] = (-df_inter["b_poly"]+np.sqrt(df_inter["Delta"]))/(2*df_inter["AS_squared"]) + pos_antena[0]
+        df_inter["y_ion_1"] = df_inter["Yas"]/df_inter["Xas"]*(df_inter["x_ion_1"]-pos_antena[0])+pos_antena[1]
+        df_inter["z_ion_1"] = df_inter["Zas"]/df_inter["Xas"]*(df_inter["x_ion_1"]-pos_antena[0])+pos_antena[2] 
+        
+        df_inter["x_ion_2"] = (-df_inter["b_poly"]-np.sqrt(df_inter["Delta"]))/(2*df_inter["AS_squared"]) + pos_antena[0]
+        df_inter["y_ion_2"] = df_inter["Yas"]/df_inter["Xas"]*(df_inter["x_ion_2"]-pos_antena[0])+pos_antena[1]
+        df_inter["z_ion_2"] = df_inter["Zas"]/df_inter["Xas"]*(df_inter["x_ion_2"]-pos_antena[0])+pos_antena[2]
+        
+        df_inter["X1xposAntena"] = (df_inter["x_ion_1"]-pos_antena[0])*df_inter["Xas"] + (df_inter["y_ion_1"]-pos_antena[1])*df_inter["Yas"] + (df_inter["z_ion_1"]-pos_antena[2])*df_inter["Zas"]
+        df_inter["X2xposAntena"] = (df_inter["x_ion_2"]-pos_antena[0])*df_inter["Xas"] + (df_inter["y_ion_2"]-pos_antena[1])*df_inter["Yas"] + (df_inter["z_ion_2"]-pos_antena[2])*df_inter["Zas"]
+
+        
+        condition = (df_inter["X1xposAntena"]<0) | ( (df_inter["X1xposAntena"]>0) & (df_inter["X2xposAntena"]>0) &  (df_inter["X2xposAntena"]<df_inter["X1xposAntena"]))
+        
+        df_inter["pos_ion_X"] = np.where(condition,df_inter["x_ion_2"],df_inter["x_ion_1"]) 
+        df_inter["pos_ion_Y"] = np.where(condition,df_inter["y_ion_2"],df_inter["y_ion_1"]) 
+        df_inter["pos_ion_Z"] = np.where(condition,df_inter["z_ion_2"],df_inter["z_ion_1"]) 
+
+        df["lat"],df["lon"],df["alt"] = pm.ecef2geodetic(df_inter["pos_ion_X"],df_inter["pos_ion_Y"],df_inter["pos_ion_Z"])
+        return df
+
+        #return 1.0, [20000000,2000000,-1000000]
+        #pos_sat=self.getPosdf(df)
+    def getElevation_old(self,sat,pos_antena,date,mode="RAD"):   
+        n = np.array([pos_antena[0],pos_antena[1],pos_antena[2]])
+        v = np.array([pos_sat[0]-pos_antena[0],pos_sat[1]-pos_antena[1],pos_sat[2]-pos_antena[2]])
+        nv = np.dot(n,v)
+        sin_phi = nv/(np.linalg.norm(n)*np.linalg.norm(v))
+        return math.asin(sin_phi),pos_sat
+
+
     # Read position from saved files
-    def getPos(self,sat,date):
+    # Not working but not used
+    def getPos(self,df):
+        
+        print (self.df_pos)
+        print (df)
+        print (pd.merge(df,self.df_pos,how='left',on=['sv','time']))
+        sys.exit()
+        
         if len(self.dict_df_pos[sat])==0: 
             return [float("NaN"),float("NaN"),float("NaN")]
 
@@ -369,10 +458,10 @@ class gnss:
             return [float("NaN"),float("NaN"),float("NaN")]
 
         pos = self.dict_df_pos[sat][["X","Y","Z"]].loc[date].tolist()
+       
+        return pos  
 
-        return pos            
-            
-            
+          
     #### Old function, should not be used anymore
     def to_CSV(self,date,feather=True):
         #resetCSV(date,feather)
@@ -484,8 +573,10 @@ class gnss:
         return gps_nav_to_XYZ(data,date)    
         
 
+
+
     # return elevation of satellite given the ID os the satellite, the position of the antenna.
-    def getElevation(self,sat,pos_antena,date,mode="RAD"):
+    def getElevation_old(self,sat,pos_antena,date,mode="RAD"):
         #return 1.0, [20000000,2000000,-1000000]
         pos_sat=self.getPos(sat,date)
         n = np.array([pos_antena[0],pos_antena[1],pos_antena[2]])
@@ -504,7 +595,7 @@ def get_pos_antenna(station,year,doy):
     pos_antena.append(df_antennas.loc[station,"z"])
     return pos_antena
 
-def getIonosphereIntersec(pos_antena,pos_sat,h=400000):
+def getPiercingPoint_old(pos_antena,pos_sat,h=400000):
     R_I = R_E + h
     #### Calculation of the position of the intersection of Satellite-Antena line with ionosphere which is a second degree equation
     Xas = pos_sat[0]-pos_antena[0]

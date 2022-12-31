@@ -32,13 +32,13 @@ import scipy.constants as csts
 import datetime
 import numpy as np
 import sys,os,subprocess
-import matplotlib.pyplot as plt
-import matplotlib.dates as md
+#import matplotlib.pyplot as plt
+#import matplotlib.dates as md
 import pymap3d as pm
-from os import listdir,path,mkdir
-from os.path import isfile, join
+#from os import listdir,path,mkdir
+#from os.path import isfile, join
 import julian
-import math
+import math	
 import time
 
 #from .stations import root_dir
@@ -168,18 +168,33 @@ def plot_leap(diffs,series,s,A,B,N,borders,title=""):
 
 class tec:
 
-    def __init__(self,f_rinex,h=400000):
+    def __init__(self,f_obs,f_nav,f_sat_bias,resolution=60,h=400000):
 
         # Name of station "cccc" (e.g. "alma")
-        self.f_rinex= f_rinex
+        self.f_obs = f_obs
+        # List of navigation files
+        self.f_nav = f_nav
+        # File containing satellite bias
+        self.f_sat_bias = f_sat_bias
+        
+        if not os.path.isfile(self.f_sat_bias): 
+            print ("bias file location not found, will take 0, might affect strongly the results")
+        
+        if not os.path.exists(self.f_obs):
+            print ("File",self.f_obs,"does not exist, nothing to process")
+            return       
+        
         self.station = ""
         self.coord = ""
 
         # Estimated high of ionosphere
         self.h = h
 
+        #Resolution that will be used for the process (should by 60 seconds)
+        self.resolution = 60
+
         # Resolution of the rinex station, in seconds.
-        self.resolution = ""
+        self.obs_resolution = ""
 
         # DataFrame containing observation data
         self.df_obs = pd.DataFrame()
@@ -204,30 +219,20 @@ class tec:
                     if e.errno!=17: print ("FAIL creation of directory "+st.root_dir + "TEC/", e )
             else: print ("Successfully created the directory "+st.root_dir + "TEC/")
 
-    def rinex_to_stec(self,resolution=None):
+    def rinex_to_stec(self):
         ''' Extract the relevant data for tec calculation from observation and navigation
             Compute STEC of pseudo range and code phase
         '''
 
-        # Access observation RINEX file
-        #f_rinex = st.root_dir+str(year)+"/"+str(doy)+"/"
-        #f_rinex = f_rinex + self.station+str(doy)+'0.'+str(year)[2:]+'o'
-
-        if self.resolution!=None:
-            self.resolution=resolution
-
-        if not os.path.exists(self.f_rinex):
-            print ("File",self.f_rinex,"does not exist")
-            return
         # Header for observation
-        try: header = gr.rinexheader(self.f_rinex)
+        try: header = gr.rinexheader(self.f_obs)
         except ValueError: return False
         self.station =header["MARKER NAME"].replace(" ","").lower()
         self.coord = header['position']
         if "INTERVAL" in header.keys():
-            self.resolution = float(header["INTERVAL"].replace(" ",""))
+            self.obs_resolution = float(header["INTERVAL"].replace(" ",""))
         else:
-            self.resolution = 1.0
+            self.obs_resolution = 1.0
 
         t_obs_splt = header["TIME OF FIRST OBS"].split(" ")
         t_obs_list = []
@@ -250,17 +255,15 @@ class tec:
             if l in fields: list_vars.append(l)
 
         # Read data of observation file
-        obs=gr.load(self.f_rinex,meas=list_vars,use="G")
+        obs=gr.load(self.f_obs,meas=list_vars,use="G")
 
         # Rinex a DataFrame
         self.df_obs = obs.to_dataframe()
         self.df_obs.index.set_names(["time","sv"],inplace=True)
         self.df_obs.reset_index(level=["sv"],inplace=True)
-        #print (self.df_obs.index)
         self.df_obs.index = pd.to_datetime(self.df_obs.index)
 
-        # List satellites seen by the station
-        # And prepare dict of list_borders
+        # List satellites seen by the station and prepare dict of list_borders
         for s in self.df_obs["sv"].values:
             if s not in self.sv:
                 self.sv.append(s)
@@ -272,10 +275,8 @@ class tec:
         self.df_obs['STEC_sll'] = (lambda1*self.df_obs['L1'] - lambda2*self.df_obs['L2'])*alpha/1e16
 
         # Changing resolution
-        if resolution!=None:
-            self.df_obs = self.df_obs.groupby("sv").resample(str(resolution)+"S").mean()
-            self.df_obs.reset_index(level=["sv"],inplace=True)
-            self.resolution = resolution
+        self.df_obs = self.df_obs.groupby("sv").resample(str(self.resolution)+"S").mean()
+        self.df_obs.reset_index(level=["sv"],inplace=True)
 
         # Remove nan values (may be optimized)
         self.df_obs.dropna(subset=["STEC_slp","STEC_sll"],inplace=True)
@@ -284,58 +285,25 @@ class tec:
         self.df_obs = self.df_obs[["sv","STEC_slp","STEC_sll"]]#.reset_index()
         return True
 
-        #if not path.exists(st.root_dir+"feather"): mkdir(st.root_dir+"feather")
-        #self.df_obs.to_feather(st.root_dir+"feather/"+self.station+"_"+str(year)+str(doy)+".feather")
-        #df_obs[["sv","lat","lon","elevation","L1","L2","P2","C1","STEC_slp","STEC_sll"]].reset_index().to_feather(st.root_dir+"feather/"+self.station+"_"+str(year)+str(doy)+".feather")
-        #self.df_obs = pd.concat([self.df_obs,df])
 
-    def add_satellite_pos(self,f_nav):
+    def add_satellite_pos(self):
         #time_list =  self.df_obs.index
-        gps = gnss.gnss(f_nav)
-        gps.load_sats(self.year)
+        gps = gnss.gnss(self.f_nav)
+        
+        d_in, d_out = min(self.df_obs.index), max(self.df_obs.index)
+        gps.load_sats(d_in,d_out)
         df_data = pd.DataFrame()
 
-        for sat in self.sv:
-
-            #print (sat)
-
-            # We extract information corresponding to satellite sat
-            df_obs_sat = self.df_obs[self.df_obs["sv"]==sat]
-            # Converting time column to timestamps
-            df_obs_sat.index = pd.to_datetime(df_obs_sat.index)
-            # Get time sequence
-            T = df_obs_sat.index
-
-            # Variable filtering data according to elevation
-            cos_chi = []
-            # Avaraged elevation over 5 minutes
-            ele = []
-            # Latitude and longitude for pos_ion
-            lats,lons = [],[]
-
-            for d in T:
-                
-                #sys.exit()
-                el, pos = gps.getElevation(sat,self.coord,d)
-                pos_ion=gnss.getIonosphereIntersec(self.coord,pos)
-
-                # Extract latitude and longitude from averaged position
-                lat,lon,alt = pm.ecef2geodetic(pos_ion[0],pos_ion[1],pos_ion[2])
-                lats.append(float(lat))
-                lons.append(float(lon))
-                ele.append(el)
-
-            # Set Latitude to dataframe
-            df_obs_sat['lat'] = lats #pd.Series(lats,index=df_obs_sat.index)
-            # Set Longitude to dataframe
-            df_obs_sat['lon'] = pd.Series(lons,index=df_obs_sat.index)
-            # Elevations
-            df_obs_sat['elevation'] = pd.Series(ele,index=df_obs_sat.index)
-
-            df_data = pd.concat([df_data,df_obs_sat])
-
-        self.df_obs = df_data.copy()
+        t_tot = 0
+        t_full = 0
+        tf = time.time()
+        
+        
+        self.df_obs = gps.getElevation(self.df_obs,self.coord)
+        self.df_obs = gps.getPiercingPoint(self.df_obs,self.coord,self.h)
+        
         return True
+
 
     def list_leaps_series(self,series,tol_dev=0.2,tol_sig=10,N_=5,debug=False):
         ''' detects leaps in the STEC_sl time series
@@ -350,16 +318,6 @@ class tec:
         indices = series.index
         # Discard too short series
         if len(series)<=N_: return []
-
-        # Get resolution (should come from stations, must be changed)
-        #res = (indices[1]-indices[0]).seconds
-        #if res == 0: res = 1e6
-        #for s in range(len(series)-1):
-        #    dif = (indices[s+1]-indices[s]).seconds
-        #    if dif==0: continue
-        #    if dif<res: res = dif
-        #tolerance = 2* self.resolution
-
 
         # Final list that will contain all the borders
         list_borders = []
@@ -416,10 +374,6 @@ class tec:
         while s1<len(series):
             # Looking for an right border
             if border["right"] is None:
-                #plot_leap(diffs,series,s1,list_fit_params[s1]["A"],list_fit_params[s1]["B"],N,list_borders)
-                #print (list_fit_params[s1]["right_dev"]>tol_deviation,list_fit_params[s1]["right_dev"],tol_deviation)
-                #print (list_fit_params[s1]["right_dev"]>tol_sig*list_fit_params[s1]["max_dev"],list_fit_params[s1]["right_dev"],tol_sig*list_fit_params[s1]["max_dev"])
-                #print (list_fit_params[s1]["right_dev"]>0.04*self.resolution,list_fit_params[s1]["right_dev"],0.04*self.resolution)
                 if s1>=len(series)-N+1:
                     #print ("plot 0")
                     #list_borders = remove_overlaps(list_borders)
@@ -434,10 +388,7 @@ class tec:
                     border["t_right"]=series.index[s1+N-1]
                     border["right_A"]=list_fit_params[s1-1]["A"]
                     border["right_B"]=list_fit_params[s1-1]["B"]
-                    #print (border)
-                    #print ("plot 1")
-                    #if debug: plot_leap(diffs,series,s1-1,list_fit_params[s1-1]["A"],list_fit_params[s1-1]["B"],N,list_borders,"forward")
-                    #print ("using last border")
+
                     s2=s1-1
                 elif list_fit_params[s1]["right_dev"]>tol_deviation or (list_fit_params[s1]["right_dev"]>tol_sig*list_fit_params[s1]["max_dev"] and list_fit_params[s1]["right_dev"]>0.04*self.resolution):
                     if debug:
@@ -521,14 +472,11 @@ class tec:
                     s1=s1+N
                 else: s2-=1
         list_borders = filter_slope_leap(list_borders,series,diffs)
-        #print ("list_borders")
-        #for l in list_borders: print (l)
         return list_borders
 
     def list_leaps(self,df):
         borders=[]
         borders_sl = self.list_leaps_series(df["STEC_sll"],0.4,3,3,debug=False)
-        #borders_sl = filter_overlap_leap(borders_sl,df["STEC_sll"])
         borders_slp = self.list_leaps_series(df["STEC_slp"],100,150,5,debug=False)
 
         # We look at the borders found for slp and sll leaps, and make the
@@ -563,32 +511,9 @@ class tec:
                     borders.append(bslp)
                     break
 
-
-        #for border in borders:
-        #    print (border)
-
-
         return borders
 
-    def add_baseline(self,f_bias):
-
-        df_data= pd.DataFrame()
-        #if year1!=year2: print ("Warning in gaps filter")
-
-       # doy = doy1
-        #year = year1
-        #while doy<=doy2:
-        #    print (doy)
-        #    if not os.path.exists(st.root_dir+"feather/"+station+"_"+str(year)+str(doy)+".feather"):
-        #        doy+=1
-        #        continue
-        #    df = pd.read_feather(st.root_dir+"feather/"+station+"_"+str(year)+str(doy)+".feather")
-        #    df.set_index("time",inplace=True)
-        #    df.index = pd.to_datetime(df.index)
-#
-#            df_data = pd.concat([df_data,df])
-#
-#            doy+=1
+    def add_baseline(self):
 
         df_data = self.df_obs.copy()
         if len(df_data)==0: return
@@ -599,17 +524,8 @@ class tec:
         df_filtered = pd.DataFrame()
 
         for sat in self.sv:
-            #if sat!="G05" and sat!="G01": continue
-            #if int(sat[1:])<21: continue
-            #if sat!="G13": continue
-            #if sat!="G01": continue
-            #if not sat in ["G01","G02","G03"]: continue
-            # Extract data of satellite sat
-            #print (sat)
 
-            #df_filtered = pd.DataFrame()
             df_sat = df_data[df_data["sv"]==sat]
-            #print (df_sat)
             if len(df_sat)==0: continue
 
             # Make list of arcs of satellite using elevation information
@@ -617,74 +533,30 @@ class tec:
             list_arcs = gnss.get_arcs(elevations,t_begin,t_end)
 
             # Get satellite bias and correct STEC_sl with it
-            #sat_bias = gnss.getBias(sat,df_sat.index[0],mode="P1P2") * alpha * csts.c * 1e-9  / 1e16
-            sat_bias = gnss.getBias_fromfile(sat,f_bias) * alpha * csts.c * 1e-9  / 1e16
+            sat_bias = gnss.getBias_fromfile(sat,self.f_sat_bias) * alpha * csts.c * 1e-9  / 1e16
             df_sat['STEC_sl']=df_sat['STEC_sll']
-            #df_sat.dropna(subset=["STEC_sl","STEC_slp"],inplace=True)
 
             # Squared of sin of elevation for baseline (Brs) pondering
             df_sat["sin2_ele"] = np.sin(df_sat['elevation'])**2
 
             # Individual values of the sum for future baseline calculation
             df_sat['BRs'] = (df_sat['STEC_slp']-df_sat['STEC_sll'])*df_sat["sin2_ele"]
-            #df_sat = df_sat[df_sat["elevation"]>15*np.pi/180]
 
             # cos(chi) to calculate VTEC from STEC
             df_sat['cos_chi'] = np.cos(np.arcsin(R_E*np.cos(df_sat["elevation"])/(R_E+self.h)))
-        #    with pd.option_context('display.max_rows', None, 'display.max_columns', None):  # more options can be specified also
-        #        print (df_sat[["elevation","sin2_ele","cos_chi"]])
-            #sys.exit()
-
-            #print (df_sat)
-
-            #if sat == "G19": df_sat.to_csv("G19.csv")
 
             n_arc=0
             # Run over each arc
             for arc in list_arcs:
-                # Exclude arcs if all followin condition match:
-                #   - cond1: Arc is truncated because it belongs to a day that is not in
-                #   the considered time series
-                #   - cond2: The maximum of the arc is not inside the time segment
-                #   - cond3: The maximum of the arc is below 15 degrees
-                #cond1 = not arc["full"]
-                #cond2 = arc["tmax"]==arc["end"] or arc["tmax"]==arc["start"]
-                #cond3 = arc["max_ele"]<15.0*math.pi/180
-                #if cond1 and cond2 and cond3: continue
-                #if cond1 and cond3: continue
-
                 # Must gets borders that are inside the arc segment
                 arc_borders = None
                 arc_borders = []
-
-
-                #for b in self.borders[sat]:
-                #    if b["t_right"]<=arc["end"] or b["t_left"]>=arc["start"]:
-                #        border = b
-                #        if b["t_right"]>arc["end"]: border["t_right"]=arc["end"]
-                #        if b["t_left"]<arc["start"]: border["t_left"]=arc["start"]
-                #        arc_borders.append(border)
-
-                #for b in arc_borders:
-                #    print (b)
 
                 # Extract data from satellite arc
                 df_arc = df_sat.loc[arc["start"]:arc["end"]]
                 if len(df_arc)<=8:continue
 
                 arc_borders = self.list_leaps(df_arc)
-
-                if False:
-                    fig, ax = plt.subplots(1,figsize=(10,4))
-                    ax.plot(df_arc["STEC_sl"],'b.')
-                    ax.plot(df_arc["STEC_slp"],'.',color="gray")
-                    axx = ax.twinx()
-                    axx.plot(df_arc["elevation"],'k')
-                    for b in arc_borders: ax.axvline(x=b["t_left"],color='r')
-                    for b in arc_borders: ax.axvline(x=b["t_right"],color='b')
-                    plt.show()
-                    plt.close()
-                    #sys.exit()
 
                 if len(arc_borders)==0: continue
 
@@ -701,14 +573,6 @@ class tec:
                         i+=1
                         list_max_ele.append(max_ele)
 
-                #if n_arc!=1:
-                #    n_arc+=1
-                #    continue
-
-                # Detection of leaps, essential for jump reconstructions in signal
-                # borders = list_leaps2(df_arc[["STEC_sl","STEC_slp"]],3)
-
-
                 #### Clasify segments #####
                 d_df_seg = []
                 has_sane_parts = False
@@ -717,10 +581,8 @@ class tec:
                 for i,b in enumerate(arc_borders):
                     size_seg = (arc_borders[i]["t_right"]-arc_borders[i]["t_left"]).seconds
                     list_size_segs.append(size_seg)
-                    #max_ele = max(df_arc.loc[arc_borders[i]["t_left"]:arc_borders[i]["t_right"]]["elevation"])
-                    #list_max_ele.append(max_ele)
-                    #print (size_seg)
-                    if size_seg>50*60:# and list_max_ele[i]>30*np.pi/180:
+
+                    if size_seg>50*60:
                         df_seg = None
                         df_seg = df_arc.loc[b["t_left"]:b["t_right"]]
                         df_br = df_seg.dropna(subset=["BRs","sin2_ele"])
@@ -738,12 +600,6 @@ class tec:
                     df_seg = None
                     df_seg = df_arc.loc[arc_borders[i]["t_left"]:arc_borders[i]["t_right"]]
                     t_dist=(arc_borders[i+1]["t_left"]-arc_borders[i]["t_right"]).seconds
-                    #if list_max_ele[i]<30*np.pi/180 and t_dist>20*60:
-                    #    arc_borders.pop(i)
-                    #    d_df_seg.pop(i)
-                    #    continue
-                    #for a in arc_borders:
-                    #    print (a)
                     slope = (arc_borders[i+1]["left_A"]+arc_borders[i]["right_A"])/2
 
                     #df_filter_arc = df_arc.loc[arc_borders[i]["t_left"]:arc_borders[i]["t_right"]]
@@ -760,13 +616,9 @@ class tec:
                     df_seg = None
                     df_seg = df_arc.loc[arc_borders[i]["t_left"]:arc_borders[i]["t_right"]]
                     t_dist=(arc_borders[i]["t_left"]-arc_borders[i-1]["t_right"]).seconds
-                    #if list_max_ele[i]<30*np.pi/180 and t_dist>20*60:
-                    #    arc_borders.pop(i)
-                    #    d_df_seg.pop(i)
-                    #    continue
+
                     slope = arc_borders[i-1]["right_A"]
-                    #print (d_df_seg[i-1])
-                   # df_filter_arc = df_arc.loc[arc_borders[i]["t_left"]:arc_borders[i]["t_right"]]
+
                     glue=d_df_seg[i-1]["STEC_sl"].iloc[-1]-df_seg["STEC_sl"].iloc[0]+slope*t_dist
                     df_br = df_seg.dropna(subset=["BRs","sin2_ele"])
                     brs=df_br['BRs'].sum(skipna=True)/df_br["sin2_ele"].sum(skipna=True)
@@ -793,19 +645,16 @@ class tec:
                                     df_seg = None
                                     df_seg = df_arc.loc[arc_borders[ileft]["t_left"]:arc_borders[ileft]["t_right"]]
                                     t_dist=(arc_borders[ileft]["t_left"]-arc_borders[ileft-1]["t_right"]).seconds
-                                    #if list_max_ele[ileft]<30*np.pi/180 and t_dist>20*60:
-                                    #    arc_borders.pop(ileft)
-                                    #    d_df_seg.pop(ileft)
-                                    #    continue
+
                                     slope = arc_borders[ileft-1]["right_A"]
-                                    # df_filter_arc = df_arc.loc[arc_borders[i]["t_left"]:arc_borders[i]["t_right"]]
+
                                     glue=d_df_seg[ileft-1]["STEC_sl"].iloc[-1]-df_seg["STEC_sl"].iloc[0]+slope*t_dist
                                     df_br = df_seg.dropna(subset=["BRs","sin2_ele"])
                                     brs=df_br['BRs'].sum(skipna=True)/df_br["sin2_ele"].sum(skipna=True)
                                     if abs(glue-brs)>20: correction = brs
                                     else: correction = glue
                                     df_seg["STEC_sl"] = df_seg["STEC_sl"] + correction
-                                    #print ("ileft",ileft)
+
                                     d_df_seg[ileft] = df_seg
                                     ileft+=1
                                 elif not only_right:
@@ -814,24 +663,20 @@ class tec:
                             if not only_right:
                                 t_left = (arc_borders[iright]["t_left"]-arc_borders[ileft]["t_right"]).seconds
                                 t_right = (arc_borders[iright+1]["t_left"]-arc_borders[iright]["t_right"]).seconds
-                                #print (sat,"right",t_left,t_right)
                                 if t_left>=t_right or only_left:
                                     df_seg = None
                                     df_seg = df_arc.loc[arc_borders[iright]["t_left"]:arc_borders[iright]["t_right"]]
                                     t_dist=(arc_borders[iright+1]["t_left"]-arc_borders[iright]["t_right"]).seconds
-                                    #if list_max_ele[iright]<30*np.pi/180 and t_dist>20*60:
-                                    #    arc_borders.pop(iright)
-                                    #    d_df_seg.pop(iright)
-                                    #    continue
+
                                     slope = arc_borders[iright+1]["right_A"]
-                                    # df_filter_arc = df_arc.loc[arc_borders[i]["t_left"]:arc_borders[i]["t_right"]]
+
                                     glue=d_df_seg[iright+1]["STEC_sl"].iloc[0]-df_seg["STEC_sl"].iloc[-1]+slope*t_dist
                                     df_br = df_seg.dropna(subset=["BRs","sin2_ele"])
                                     brs=df_br['BRs'].sum(skipna=True)/df_br["sin2_ele"].sum(skipna=True)
                                     if abs(glue-brs)>20: correction = brs
                                     else: correction = glue
                                     df_seg["STEC_sl"] = df_seg["STEC_sl"] + correction
-                                    #print ("iright",iright)
+
                                     d_df_seg[iright] = df_seg
                                     iright-=1
                                 elif not only_left:
@@ -849,40 +694,8 @@ class tec:
                 df_filter_arc=df_filter_arc[["sv","lat","lon","elevation","cos_chi","STEC_sll","STEC_slp","STEC_sl","VTEC"]]
                 df_filtered = pd.concat([df_filtered,df_filter_arc])
 
-                if False:
-                    df_plot = df_filter_arc[df_filter_arc["sv"]==sat]
-                    fig,ax = plt.subplots(1,figsize=(10,7))
-                    axx = ax.twinx()
-
-                    #ax.plot(df_sat["STEC_slp"], '-', color='green',label="STEC slp")
-                    #ax.plot(df_sat["STEC_sll"], '-', color='blue',label="STEC sll")
-                    ax.plot(df_arc["STEC_slp"], '-', color='gray',label="STEC slp")
-                    ax.plot(df_filter_arc["STEC_sl"], '.',markersize=8, color='orange',label="STEC (4) - satbias + baseline")
-                    #ax.plot(df_arc["VTEC_2"],color="magenta",label="VTEC")
-                    ax.plot(df_arc["STEC_sll"], '.',markersize=4,color='b',label = "STEC_sll (1)")
-
-                    axx.plot(df_arc["elevation"]*180/np.pi,'r--')
-                    ax.grid(True)
-                    ax.set_title(sat)
-                    ax.legend()
-
-                    for b in arc_borders: ax.axvline(x=b["t_left"],color='r')
-                    for b in arc_borders: ax.axvline(x=b["t_right"],color='b')
-                    mng = plt.get_current_fig_manager()
-                    mng.full_screen_toggle()
-                    plt.legend()
-                    plt.show()
-                    plt.close()
-
-            #print (list_arcs)
-            #sys.exit()
-
-        #df_filtered.reset_index().to_feather(st.root_dir+"feather/"+station+"_inter.feather")
         self.df_obs = df_filtered.copy()
 
-        ## get arcs lists
-        #if len(elevations)==0:
-        #    print ("no satellite {sat}")
 
 
     def compute_receiver_bias(self):
@@ -898,13 +711,7 @@ class tec:
                 *section 4.1 of https://hal.archives-ouvertes.fr/hal-00317176/file/angeo-21-2083-2003.pdf
                 *algebra: https://colab.research.google.com/drive/1UCZHR0t-9jyyjAnLuMN3N0Z2NB6tgI_l?usp=sharing
         '''
-        # Load feather containing data in DataFrame, assign time as index
-        #if not os.path.exists("feather/"+station+"_inter.feather"): return
-        #print (pd.read_feather("tec_feather/"+station+".feather"))
-        #df = pd.read_feather("feather/"+station+"_inter.feather").set_index("time")
-        #print (df)
-        # Convert dates index to datetime
-        #print ("compute receiver bias")
+
         df = self.df_obs.copy()
 
         # Remove rows with nan STEC_sl
@@ -954,16 +761,6 @@ class tec:
         # root of error function = receiver bias.
         br = b/a
 
-        # add bias in bais receiver file
-        #receiver_bias = pd.read_csv(st.root_dir+"stations.csv").set_index("station")
-        #print (receiver_bias)
-       # if not self.station in receiver_bias.index:
-        #    print (f"Cannot update stations.csv, station {f} not in csv")
-        #else:
-            #print ("update stations.csv")
-        #    receiver_bias.loc[self.station]["br"]=br
-        #    receiver_bias.to_csv(st.root_dir+"stations.csv")
-
         self.br = br
 
         d = {"station":[self.station],"br":[self.br]}
@@ -983,7 +780,7 @@ class tec:
         else:
             df_br = pd.DataFrame(d).set_index("station")
             df_br.to_csv(f_br)
-        #return self.br
+
 
     def get_receiver_bias(self,force_compute=False):
         ''' Function that returns the bias of the station given in argument
@@ -994,12 +791,11 @@ class tec:
             * Output: float. bias value in TECU
         '''
         receiver_bias = pd.read_csv(st.root_dir+"stations.csv").set_index("station")
-        #with pd.option_context('display.max_rows', None, 'display.max_columns', None): print (receiver_bias)
-        #print (station)
+
         if not self.station in receiver_bias.index:
             print (f"WARNING must update stations.csv, with {station} not in csv, return br=0")
             return 0
-        #print (receiver_bias.loc[station])
+
         br = receiver_bias.loc[self.station]["br"]
         if force_compute:
             self.br = self.compute_receiver_bias()
@@ -1008,66 +804,39 @@ class tec:
         return br
 
     def add_receiver_bias(self):
-        #self.br = self.get_receiver_bias(force_compute=True)
         if len(self.df_obs)==0: return
         self.compute_receiver_bias()
-        #print (f"receiver bias={br}")
+
         if math.isnan(self.br):
             print (f"Warning: will null receiver bias")
             self.br=0
 
-        #print (self.station,"bias",self.br)
-        # Load data
-        #if not os.path.exists("feather/"+self.station+"_inter.feather"): return
-        #df = pd.read_feather("feather/"+self.station+"_inter.feather").set_index("time")
-        # Convert dates index to datetime
-        #df.index = pd.to_datetime(df.index)
-
         # Remove rows with nan STEC_sl
         self.df_obs.dropna(subset=["STEC_sl"],inplace=True)
-        # Filter low elevations
-        #df = df[df["elevation"]>20.0*np.pi/180.0]
 
-        # Compute Slant TEC (STEC) with receiver bias
-        #df["STEC_sl"]=df["STEC_sl"]-br
         # Compute VTEC with receiver bias
         self.df_obs["VTEC"]=(self.df_obs["STEC_sl"]-self.br)*np.cos(np.arcsin(R_E*np.cos(self.df_obs["elevation"])/(R_E+self.h)))
-
-        #plt.plot(df[df["sv"]=="G01"]["VTEC"])
-        #plt.show()
-        #plt.close()
-        # Save to csv file
-        #print (self.station)
-        #self.df_obs[["sv","lat","lon","elevation","STEC_slp","STEC_sl","VTEC"]].reset_index().to_feather(st.root_dir+"feather/"+self.station+".feather")
 
     def to_feather(self, f_feather):
         self.df_obs[["sv","lat","lon","elevation","STEC_slp","STEC_sl","VTEC"]].reset_index().to_feather(f_feather)
 
 
-def rinex_to_feather(f_obs="",f_nav="",f_bias=""):
-    if not isfile(f_obs): print ("rinex file location not found, nothing to process")
-    print ("Initialization")
-    print (" -- Loading observation file:", f_obs)
-    print (" -- Loading navigation file:",f_nav)
-    print (" -- Loading bias of satellite:", f_bias)
-    tec_station = tec(f_obs)
+    def compute_vtec(self):
+ 
+        print ("Converting code and pseudorange from observation rinex to slant tec")
+        if not self.rinex_to_stec(): return
     
-    print ("Converting code and pseudorange from observation rinex to slant tec")
-    if not tec_station.rinex_to_stec(60): return
+        print ("Calculating satellite position from navigation rinex")
+        self.add_satellite_pos()
     
-    print ("Calculating satellite position from navigation rinex")
-    tec_station.add_satellite_pos(f_nav)
+        print ("Calculating baseline to correct Slant TEC")
+        self.add_baseline()
+    
+        print ("Calculating receiver bias, correct Slant TEC, compute VTEC")
+        self.add_receiver_bias()
+        f_feather = self.f_obs[:-4]+"tec.feather"
 
-    
-    if not isfile(f_bias): print ("bias file location not found, will take 0, might affect strongly the results")
-    
-    print ("Calculating baseline to correct Slant TEC")
-    tec_station.add_baseline(f_bias=f_bias)
-    
-    print ("Calculating receiver bias, correct Slant TEC, compute VTEC")
-    tec_station.add_receiver_bias()
-    f_feather = f_obs[:-4]+"tec.feather"
 
-    print ("Save to feather:",f_feather)
-    tec_station.to_feather(f_feather)
+        print ("Save to feather:",f_feather)
+        self.to_feather(f_feather)
     

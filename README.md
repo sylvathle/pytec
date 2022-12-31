@@ -4,7 +4,7 @@ Python library for Total Electron Content computing from Rinex files
 ## Installation
 
 Go where you want pytec to be stored:
-```
+```bash
 cd where/you/want/pytec/to/be/stored
 ```
 Download the git repostory on your computer:
@@ -13,35 +13,42 @@ wget https://github.com/sylvathle/pytec.git
 ```
 
 Clone it to get the folder structure:
-```
+```bash
 git clone pytec.git
 ```
 
 Remove the .git file
-``` 
+``` bash
 rm pytec.git
 ```
 
-Install pytec following instructions. You will be asked to set up a repository so pytec can store intermediate the results. You can skip it but processes might take longer to compute:
+Install pytec following instructions. You will be asked to set up a repository and an environment variable "PYTEC_PATH" so pytec can store intermediate the results. You can skip it but processes might take longer to compute:
 
-```
+```bash
 cd pytec
 ./install-devmode-package.sh
 ```
 
-## Paths
-Source and target files must be hosted in a folder which path is contained in a environment variable called RINEX\_PATH.
-It is recommended to save the RINEX\_PATH in the .bashrc file so that there will be no need to redefine at each new terminal session.
+### Known Errors
 
-This folder is structured according to year and day of year, for example:
-RINEX\_PATH:
- - 2020
-  --> 349
-  --> 350
- - 2021
-  --> 37
-In each day folder must be hosted the RINEX observation files and will be written feather files containing the computed TEC (same name, but extension changed from statDOY0.YYo to stat.feather where stat stands for the 4 letter designing the GNSS station). 
-In order to work, this folder must also contain the navigation rinex files to get satellite ephemeris information.
+**Incompatible xarray module version with georinex**
+
+Georinex has some specific dependencies that we have observed could be broken.
+In particular latest versions of the "xarray" module are not compatible with georinex and might make the georinex "load" method fail.
+
+A known solution is to force a working version of "xarray":
+
+```bash
+pip3 install xarray=0.20.1
+```
+
+**Other problems**
+
+Please report problems you find to install pytec to *sylvain.blunier@gmail.com*
+
+## Simple example
+
+
 
 ## Code
 

@@ -15,6 +15,7 @@ f_nav = [f_base + "amco3491.20n", f_base + "babj3491.20n", f_base + "amte3481.20
 f_bias = f_base + "P1P22203.DCB"
 
 # Se deberia crear f"antc3490tec.feather"
-tec.rinex_to_feather(f_obs=f_obs,f_nav=f_nav,f_bias=f_bias)
+station_tec = tec.tec(f_obs, f_nav, f_bias)
+station_tec.compute_vtec()
 
 

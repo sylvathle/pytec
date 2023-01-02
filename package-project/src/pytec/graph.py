@@ -17,9 +17,9 @@ def plot_station(df_station,png_file_name):
         i = int(n/2)
         j = n%2
         df_sat = df_station[df_station["sv"]==sat]
-        axs[i,j].plot(df_station["VTEC"],'b.')
+        axs[i,j].plot(df_sat["VTEC"],'b.')
         axsx = axs[i,j].twinx()
-        axsx.plot(df_station["elevation"]*180/3.1415926535,'r.',markersize=1,alpha=0.5)
+        axsx.plot(df_sat["elevation"]*180/3.1415926535,'r.',markersize=1,alpha=0.5)
         axsx.set_ylim([0,90])
         axs[i,j].set_title(sat)
         axs[i,j].grid(True)

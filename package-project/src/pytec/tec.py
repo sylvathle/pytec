@@ -857,7 +857,7 @@ class tec:
         self.add_receiver_bias()
         
         
-        f_feather = self.list_f_obs[1][:-4]+"tec.feather"
+        f_feather = self.list_f_obs[min(len(self.list_f_obs)-1,1)][:-4]+"tec.feather"
 
 
         print ("Save to feather:",f_feather)

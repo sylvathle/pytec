@@ -1,6 +1,10 @@
 # pytec
 Python library for Total Electron Content computing from Rinex files
 
+## Requirements
+
+Tested on python 3.9.2
+
 ## Installation
 
 Go where you want pytec to be stored:

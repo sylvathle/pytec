@@ -168,10 +168,10 @@ def plot_leap(diffs,series,s,A,B,N,borders,title=""):
 
 class tec:
 
-    def __init__(self,f_obs,f_nav,f_sat_bias,resolution=60,h=400000):
+    def __init__(self,list_f_obs,f_nav,f_sat_bias,resolution=60,h=400000):
 
-        # Name of station "cccc" (e.g. "alma")
-        self.f_obs = f_obs
+        # List of observation files
+        self.list_f_obs = list_f_obs        
         # List of navigation files
         self.f_nav = f_nav
         # File containing satellite bias
@@ -179,10 +179,12 @@ class tec:
         
         if not os.path.isfile(self.f_sat_bias): 
             print ("bias file location not found, will take 0, might affect strongly the results")
-        
-        if not os.path.exists(self.f_obs):
-            print ("File",self.f_obs,"does not exist, nothing to process")
-            return       
+    
+        # Test if each file in list of stations exists    
+        for f_obs in self.list_f_obs:
+            if not os.path.exists(f_obs):
+                print ("File",f_obs,"does not exist, nothing to process")
+                return       
         
         self.station = ""
         self.coord = ""
@@ -225,7 +227,10 @@ class tec:
         '''
 
         # Header for observation
-        try: header = gr.rinexheader(self.f_obs)
+        try: 
+            # Header of the central file, the one we want to save the information
+            header = gr.rinexheader(self.list_f_obs[1])
+            # Header of the first file, to extract 
         except ValueError: return False
         self.station =header["MARKER NAME"].replace(" ","").lower()
         self.coord = header['position']
@@ -254,14 +259,29 @@ class tec:
         for l in full_vars_list:
             if l in fields: list_vars.append(l)
 
-        # Read data of observation file
-        obs=gr.load(self.f_obs,meas=list_vars,use="G")
-
-        # Rinex a DataFrame
-        self.df_obs = obs.to_dataframe()
-        self.df_obs.index.set_names(["time","sv"],inplace=True)
-        self.df_obs.reset_index(level=["sv"],inplace=True)
-        self.df_obs.index = pd.to_datetime(self.df_obs.index)
+        # Concat all data in one file
+        first=True
+        self.df_obs = pd.DataFrame()
+        for f_obs in self.list_f_obs:
+            # Read data of observation file
+            obs=gr.load(f_obs,meas=list_vars,use="G")
+ 
+            if first: 
+                # Rinex a DataFrame
+                self.df_obs = obs.to_dataframe()
+                self.df_obs.index.set_names(["time","sv"],inplace=True)
+                self.df_obs.reset_index(level=["sv"],inplace=True)
+                self.df_obs.index = pd.to_datetime(self.df_obs.index)
+                first=False
+            else:
+                # Rinex a DataFrame
+                df_day = obs.to_dataframe()
+                df_day.index.set_names(["time","sv"],inplace=True)
+                df_day.reset_index(level=["sv"],inplace=True)
+                df_day.index = pd.to_datetime(df_day.index)
+                self.df_obs = pd.concat([df_day,self.df_obs])
+            
+            
 
         # List satellites seen by the station and prepare dict of list_borders
         for s in self.df_obs["sv"].values:
@@ -606,6 +626,7 @@ class tec:
                     glue=d_df_seg[i+1]["STEC_sl"].iloc[0]-df_seg["STEC_sl"].iloc[-1]-slope*t_dist
                     df_br = df_seg.dropna(subset=["BRs","sin2_ele"])
                     brs=df_br['BRs'].sum(skipna=True)/df_br["sin2_ele"].sum(skipna=True)
+
                     if abs(glue-brs)>20: correction = brs
                     else: correction = glue
                     df_seg["STEC_sl"] = df_seg["STEC_sl"] + correction
@@ -821,11 +842,11 @@ class tec:
         self.df_obs[["sv","lat","lon","elevation","STEC_slp","STEC_sl","VTEC"]].reset_index().to_feather(f_feather)
 
 
-    def compute_vtec(self):
+    def compute_vtec(self):	
  
         print ("Converting code and pseudorange from observation rinex to slant tec")
         if not self.rinex_to_stec(): return
-    
+    	
         print ("Calculating satellite position from navigation rinex")
         self.add_satellite_pos()
     
@@ -834,7 +855,9 @@ class tec:
     
         print ("Calculating receiver bias, correct Slant TEC, compute VTEC")
         self.add_receiver_bias()
-        f_feather = self.f_obs[:-4]+"tec.feather"
+        
+        
+        f_feather = self.list_f_obs[1][:-4]+"tec.feather"
 
 
         print ("Save to feather:",f_feather)

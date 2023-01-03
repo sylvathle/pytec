@@ -21,5 +21,6 @@ station_tec.compute_vtec()
 print (station_tec.df_obs)
 
 graph.plot_station(station_tec.df_obs,f_base+"antc349")
+graph.plot_station(station_tec.df_obs,f_base+"antc349",mozaic=True)
 
 

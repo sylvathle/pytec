@@ -901,7 +901,7 @@ def get_arcs(elevations,t_begin=None,t_end=None):
             continue
 
         if not is_in_arc and vnew>0:
-            print ("not in arc and vnew>0")
+            #print ("not in arc and vnew>0")
             is_in_arc=True
             arc["start"]=inew
             iin=k

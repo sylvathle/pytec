@@ -1,0 +1,10 @@
+# ignore all logs
+*.log
+built-package.sh
+install-built-package.sh
+test-consume-package.sh
+test_base.py
+test.py
+
+package-project/src/pytec/gnss2.py
+package-project/src/pytec/gnss_intent.py

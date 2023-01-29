@@ -11,5 +11,6 @@ echo; echo "Showing package info:"
 
 pip3 show pytec
 
+python3 -mpip install python-decouple
 python3 ./package-consumer-project/consumepackage.py
 source ~/.bashrc

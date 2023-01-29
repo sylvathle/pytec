@@ -3,8 +3,58 @@ import os,sys
 import numpy as np
 
 #from pytec import stations as st
-from pytec import tec
+#from pytec import tec
 
+f_path = ".env"
+pwd = os.environ["PWD"]
+
+if os.path.exists(f_path):
+    f = open(f_path,'r')
+    PYTEC_PATH = f.readlines()[0]
+    print ("PATH used to stored GNSS and receiver bias already set to: "+ PYTEC_PATH)
+    f.close()
+else:
+    PYTEC_PATH = pwd + "/.pytec"
+    print ("Please define PYTEC directory where all intermediate data will be stored, this can be an external disk (consider at least 1GB)")
+    print ("    This folder will contain two sub folders:")
+    print ("       -- TEC: containing the bias of the receptors")
+    print ("       -- GPS: saving the position of each satellite to avoid reprocessing")
+    ans = str(input ("Use default directory '"+PYTEC_PATH+"'? (y/n) "))
+
+    while True:
+        if ans == "y":
+            f = open(f_path,"w")
+            home = os.environ["HOME"]
+            f.write("PYTEC_PATH=\""+PYTEC_PATH+"\"")
+            f.close()
+            print ("pytec directory set up to "+PYTEC_PATH)
+            if not os.path.exists(PYTEC_PATH):
+                try: os.mkdir(PYTEC_PATH)
+                except OSError as e:
+                    if e.errno!=17: 
+                        print ("FAIL creation of directory "+PYTEC_PATH, e )
+                        print ("Installation failed, please check that  folder ",PYTEC_PATH, "can be created")
+            break
+        elif ans == "n":
+            PYTEC_PATH = str(input("Please enter the path of the directory you want to use (it must exist, it will NOT be created)\n"))
+            if not os.path.exists(PYTEC_PATH):
+                print (PYTEC_PATH,"does not exist, restart installation with an existing folder (or use default).\n")
+                print ("ERROR: Installation failed")
+                break
+            f = open(f_path,"w")
+            home = os.environ["HOME"]
+            f.write("PYTEC_PATH=\""+PYTEC_PATH+"\"")
+            f.close()
+            print ("pytec directory set up to "+PYTEC_PATH)
+            break
+        else:
+            print ("Did not understand, please answer 'y' or 'n'")
+            ans = str(input ("Use default directory '"+PYTEC_PATH+"'? (y/n) "))
+            
+        
+    print ("You can change it by editing or removing the file "+f_path+", and reinstalling pytec")
+
+sys.exit()
 
 #if not os.environ.get("PYTEC_PATH"):
 if "PYTEC_PATH" not in os.environ:

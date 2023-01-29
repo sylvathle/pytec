@@ -168,7 +168,7 @@ def plot_leap(diffs,series,s,A,B,N,borders,title=""):
 
 class tec:
 
-    def __init__(self,list_f_obs,f_nav,f_sat_bias,resolution=60,h=400000):
+    def __init__(self,list_f_obs,f_nav,f_sat_bias,f_out="",resolution=60,h=400000):
 
         # List of observation files
         self.list_f_obs = list_f_obs        
@@ -176,6 +176,12 @@ class tec:
         self.f_nav = f_nav
         # File containing satellite bias
         self.f_sat_bias = f_sat_bias
+        #Output feather file
+        if f_out == "": 
+            self.f_feather = self.list_f_obs[min(len(self.list_f_obs)-1,1)][:-4]+"tec.feather"
+        else:
+            if f_out[-8:] ==".feather": self.f_feather = f_out
+            else: self.f_feather = f_out + ".feather"
         
         if not os.path.isfile(self.f_sat_bias): 
             print ("bias file location not found, will take 0, might affect strongly the results")
@@ -229,7 +235,7 @@ class tec:
         # Header for observation
         try: 
             # Header of the central file, the one we want to save the information
-            header = gr.rinexheader(self.list_f_obs[1])
+            header = gr.rinexheader(self.list_f_obs[min(len(self.list_f_obs)-1,1)])
             # Header of the first file, to extract 
         except ValueError: return False
         self.station =header["MARKER NAME"].replace(" ","").lower()
@@ -857,9 +863,9 @@ class tec:
         self.add_receiver_bias()
         
         
-        f_feather = self.list_f_obs[min(len(self.list_f_obs)-1,1)][:-4]+"tec.feather"
+        
 
 
-        print ("Save to feather:",f_feather)
-        self.to_feather(f_feather)
+        print ("Save to feather:",self.f_feather)
+        self.to_feather(self.f_feather)
     

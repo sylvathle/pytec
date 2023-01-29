@@ -60,4 +60,5 @@ def plot_station(df_station,png_file_name,mozaic=False):
             axs.grid(True)
             axs.set_ylabel("VTEC")
 
+        print (png_file_name)
         plt.savefig(png_file_name+".png",bbox_inches='tight')

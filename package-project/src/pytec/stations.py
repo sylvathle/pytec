@@ -35,21 +35,8 @@ import sys
 
 from decouple import config
 
-print ("Aca ")
 root_dir = config('PYTEC_PATH')+"/"
-print(root_dir)
 
-# 	print (SysEnv().unset(key="PYTEC_PATH", shell_file="~/.zsh"))
-#sys.exit()
-
-#print ("STATIONS")
-#f = open(".PYTEC_PATH",'r')
-#root_dir = f.readlines()[0]
-#print (root_dir)
-#sys.exit()
-
-
-#root_dir = getenv("PYTEC_PATH",'.') + "/"
 csv_stations = root_dir+"stations.csv"
 
 def resume_station(year,force=False):

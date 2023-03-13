@@ -9,7 +9,7 @@ Tested on python 3.9.2
 
 Go where you want pytec to be stored:
 ```bash
-cd where/you/want/pytec/to/be/stored
+cd /where/you/want/pytec/to/be/stored
 ```
 Clone the git repostory on your computer:
 ```

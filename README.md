@@ -75,7 +75,7 @@ File containing the bias of satellites corresponding to the month of observation
 
 Once these elements are defined, an instance of pytec can be created:
 
-`station_tec = tec.tec(f_obs,f_nav_f_bias)`
+`station_tec = tec.tec(f_obs,f_nav,f_bias)`
 
 And VTEC can be computed with default parameters:
 

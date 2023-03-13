@@ -100,7 +100,7 @@ The pandas DataFrame of this data can be directly accessed in the instanciated o
 Fast PNGs of data can be directly produced using the `pytec.graph` submodule:
 
 ```
-from pytec import tec
+from pytec import graph
 ```
 
 All satellites in one graph

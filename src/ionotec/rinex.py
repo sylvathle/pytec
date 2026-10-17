@@ -294,8 +294,9 @@ class rinex:
                 #print (self.header['constellation'])
 
                 if self.header['constellation']=='M':
-                    nav = self.read_nav3_mixed()
-                sys.exit()
+                    return self.read_nav3()
+                    #nav = self.read_nav3_mixed()
+                #sys.exit()
 
                 if self.header['constellation'] in ['G','J','C','E']:
                     nav = self.read_nav3_ephemerids()
@@ -957,7 +958,7 @@ class rinex:
 
     def read_ephemerids(self):
 
-        self.line = self.file.readline()
+        if int(self.header['version']==4): self.line = self.file.readline()
         sv=self.line[:3]
         sv = sv.replace(" ","0")
         y = int(self.line[4:8])
@@ -1105,7 +1106,8 @@ class rinex:
 
     def read_ecef(self):
 
-        self.line = self.file.readline()
+        #self.line = self.file.readline()
+        if int(self.header['version']==4): self.line = self.file.readline()
         sv=self.line[:3]
         sv = sv.replace(" ","0")
         y = int(self.line[4:8])
@@ -1168,6 +1170,76 @@ class rinex:
         il=il+19
         iodn = float(self.line[il:il+19].replace("D","E"))
         self.dict_ecef["IODN"].append(iodn) 
+
+    def read_nav3(self):
+
+        #i = 0
+        self.dict_ephemerids = {
+            "sv":[], "time":[], "SVclockBias":[], "SVclockDrift": [], "SVclockDrift2":[],
+            "IODE":[], "Crs":[], "DeltaN":[], "M0":[],
+            "Cuc":[], "Eccentricity":[], "Cus":[], "sqrtA":[],
+            "Toe":[], "Cic":[], "Omega0":[], "Cis":[],
+            "Io":[], "Crc":[], "omega":[], "OmegaDot":[],
+            "IDOT":[], "L2":[], "Week":[], "L2Pflag":[],
+            "svAcc":[], "health":[], "TGD":[], "IODC":[],
+            "transTime":[], "BNK":[]
+        }
+
+        self.dict_ecef = {
+            "sv":[], "time":[], "SVclockBias":[], "SVrelFreqBias": [], "MessageFrameTime":[],
+            "X":[], "dX":[], "dX2":[], "health":[],
+            "Y":[], "dY":[], "dY2":[], "URA":[],
+            "Z":[], "dZ":[], "dZ2":[], "IODN":[]           
+        }
+
+        while self.line:
+           
+            #i += 1    
+            print (self.line)
+            if self.line[0:3]=="   ": 
+                self.line = self.file.readline()
+                continue
+            sv = self.line[0:3]
+            print (sv)
+
+            #if self.line[10:14] in ['LNAV','FNAV','D1  ','D2  ']: 
+            if sv[0] in ['G','E','C','J']:
+                self.read_ephemerids()
+            elif sv[0] in ['S','R']: 
+                self.read_ecef()
+
+            self.line = self.file.readline()
+
+        self.file.close()
+
+        df_nav_ephemerids = pd.DataFrame(self.dict_ephemerids)
+        df_nav_ecef = pd.DataFrame(self.dict_ecef)
+
+        list_df_nav = {}
+
+        for sv in df_nav_ephemerids['sv'].unique().tolist():
+            const = sv[0]
+            df_sv = df_nav_ephemerids[df_nav_ephemerids['sv']==sv]
+            if (const=='G') or (const=='J'):
+                df_sv.rename(columns={'GPSWeek':'Week'},inplace=True)
+            if const=='C': df_sv.rename(columns={"BDTWeek":"Week"},inplace=True)
+            if const=='E': df_sv.rename(columns={"GALWeek":"Week"},inplace=True)
+            #df_sv.index = pd.to_datetime(df_sv.index)
+
+            list_df_nav[sv] = df_sv
+        #    print (df_sv)
+
+        for sv in df_nav_ecef['sv'].unique().tolist():
+            df_sv = df_nav_ecef[df_nav_ecef['sv']==sv]
+            #df_sv.index = pd.to_datetime(df_sv['time'])
+            list_df_nav[sv] = df_sv
+
+        return list_df_nav
+
+        #self.df_nav_ephemerids.set_index(["time","sv"],inplace=True)
+        #self.df_nav_ecef.set_index(["time","sv"],inplace=True)
+
+        
 
     def read_nav4(self):
 

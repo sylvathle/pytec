@@ -42,6 +42,15 @@ simplefilter(action='ignore', category=FutureWarning)
 import pandas as pd
 from pathlib import Path
 
+import re
+import time
+from pathlib import Path
+from urllib.parse import urljoin
+
+import requests
+import urllib3
+import gzip
+
 #import psutil
 
 
@@ -81,6 +90,113 @@ a_major_ellipsoid_axis = 6378136
 
 GPS_EPOCH  = datetime.datetime(1980, 1, 6)
 BDS_EPOCH  = datetime.datetime(2006, 1, 1)
+
+
+BKG_BASE = "https://igs.bkg.bund.de/root_ftp/IGS/BRDC"
+BKG_CANDIDATES = [("BRD400DLR_S_", "MN.rnx.gz"),
+                  ("BRDC00WRD_S_", "MN.rnx.gz")]
+UA = {"User-Agent": "curl/8.5.0"}
+NET_ERRORS = (requests.RequestException, urllib3.exceptions.HTTPError, OSError)
+
+
+def _get_text(url, retries=5, timeout=60):
+    for attempt in range(retries):
+        try:
+            r = requests.get(url, timeout=timeout, headers=UA)
+            r.raise_for_status()
+            return r.text
+        except NET_ERRORS:
+            if attempt == retries - 1:
+                raise
+            time.sleep(2 ** attempt)
+
+
+def _download(url, path, retries=8, timeout=60):
+    """Download with retry + resume (Range) on mid-body failures; verifies final size."""
+    tmp = path.with_suffix(path.suffix + ".part")
+    for attempt in range(retries):
+        try:
+            pos = tmp.stat().st_size if tmp.exists() else 0
+            headers = dict(UA)
+            if pos:
+                headers["Range"] = f"bytes={pos}-"
+            with requests.get(url, stream=True, headers=headers, timeout=timeout) as r:
+                if r.status_code == 416:            # stale/oversized .part: restart
+                    tmp.unlink(missing_ok=True)
+                    raise IOError("Range not satisfiable, restarting")
+                r.raise_for_status()
+                if pos and r.status_code != 206:    # server ignored Range: restart
+                    pos = 0
+                clen = r.headers.get("Content-Length")
+                total = int(clen) + pos if clen else None
+                with open(tmp, "ab" if pos else "wb") as fh:
+                    for chunk in r.raw.stream(1 << 20, decode_content=False):
+                        fh.write(chunk)
+            if total is not None and tmp.stat().st_size != total:
+                raise IOError(f"Incomplete: {tmp.stat().st_size}/{total} bytes")
+            tmp.replace(path)
+            return path
+        except NET_ERRORS:
+            if attempt == retries - 1:
+                raise
+            time.sleep(min(2 ** attempt, 30))
+
+def extract_gz_files(source_file, dest_file):
+    if source_file.endswith(".gz"):
+        with gzip.open(source_file, 'rb') as f_in:
+            with open(dest_file, 'wb') as f_out:
+                shutil.copyfileobj(f_in, f_out)
+
+
+def get_brdc_from_bkg(year, doy, DEST_DIR_BASE, overwrite=False):
+    """
+    Mixed broadcast nav file from https://igs.bkg.bund.de/root_ftp/IGS/BRDC/YYYY/DOY/
+    Priority: BRD400DLR_S_*MN.rnx.gz, then BRDC00WRD_S_*MN.rnx.gz.
+    The .gz is extracted and removed; returns the path of the uncompressed
+    .rnx file, or None if not found.
+    """
+    year, doy = int(year), int(doy)
+    url_dir = f"{BKG_BASE}/{year:04d}/{doy:03d}/"
+    dest_dir = Path(DEST_DIR_BASE) / f"{year:04d}" / f"{doy:03d}"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    # Already extracted locally (in priority order): no network access needed
+    if not overwrite:
+        for prefix, suffix in BKG_CANDIDATES:
+            local = sorted(dest_dir.glob(f"{prefix}*{suffix[:-3]}"))   # ...MN.rnx
+            if local:
+                return local[0]
+
+    html = _get_text(url_dir)
+    names = sorted({h.split("/")[-1] for h in re.findall(r'href="([^"?#/][^"?#]*)"', html)})
+
+    for prefix, suffix in BKG_CANDIDATES:
+        matches = [n for n in names if n.startswith(prefix) and n.endswith(suffix)]
+        if not matches:
+            continue
+
+        gz_path = dest_dir / matches[0]
+        out_path = gz_path.with_suffix("")                  # strip .gz -> ...MN.rnx
+
+        if overwrite:
+            gz_path.with_suffix(gz_path.suffix + ".part").unlink(missing_ok=True)
+            gz_path.unlink(missing_ok=True)
+        if not gz_path.exists():
+            _download(urljoin(url_dir, matches[0]), gz_path)
+
+        tmp_out = out_path.with_suffix(out_path.suffix + ".part")
+        try:
+            extract_gz_files(str(gz_path), str(tmp_out))
+        except (OSError, EOFError):                         # corrupt gz (BadGzipFile is an OSError)
+            tmp_out.unlink(missing_ok=True)
+            gz_path.unlink(missing_ok=True)                 # force re-download next call
+            raise
+        tmp_out.replace(out_path)
+        gz_path.unlink()
+        return out_path
+
+    print(f"No BRD400DLR_S / BRDC00WRD_S mixed nav file in {url_dir}")
+    return None
 
 
 
@@ -304,13 +420,13 @@ def get_file_by_prefix(folder_path, full_string):
     # 1. Extract the first 4 characters
     prefix = full_string[:4]
     directory = Path(folder_path)
-    print (prefix)
-    print (directory)
+    #print (prefix)
+    #print (directory)
     
     # 2. Find matching files
-    print ('looking for matching files')
+    #print ('looking for matching files')
     for file in directory.glob(f"{prefix}*"):
-        print (file)
+        print ('--',file)
 
     matching_files = (file for file in directory.glob(f"{prefix}*") if file.is_file())
     #print (matching_files)
@@ -576,7 +692,7 @@ class gnss:
         self.gnss_dir = st.root_dir + "GNSS/"
         
         if not os.path.exists(self.gnss_dir):
-            try: os.mkdir(self.gnss_dir)
+            try: Path(self.gnss_dir).mkdir(parents=True,exist_ok=True)
             except OSError as e:
                 if e.errno!=17: print ("FAIL creation of directory "+self.gnss_dir, e )
             else: print ("Successfully created the directory "+self.gnss_dir)
@@ -595,10 +711,11 @@ class gnss:
         #convert_sv0_suff0 = {'G':'n','R':'g','E':'l','J':'q','S':'h','C':'f','I':'i'}
         #self.list_constellation = []
 
+        oneday = datetime.timedelta(days=1)
               
               
-        self.datemin = datemin
-        self.datemax = datemax
+        self.datemin = datemin-oneday
+        self.datemax = datemax+oneday
         
         self.df_pos = pd.DataFrame()
 
@@ -658,7 +775,7 @@ class gnss:
         #      list_const_suff.append(suff0)
         #   if sv[0] not in self.list_constellation:
         #      self.list_constellation.append(sv[0])
-        list_stations = ['brd4','brdc']
+        list_stations = ['BRD4','brdc']
 
         for (year,doy) in list_doy_to_process:
             #print (year,doy)
@@ -668,77 +785,25 @@ class gnss:
             #year = d.year
             #doy = (d.date() - datetime.date(year,1,1)).days + 1
             n_files_ready = 0
+            str_doy = str(doy)
+            if doy<10: str_doy = '00' + str_doy
+            elif doy<100: str_doy ='0'+str_doy
 
-            #for c in list_const_suff:
-            #    suff = str(year-2000)+c                    
-            #       
-            #    directory_GNSS_path_const = Path(self.gnss_dir+str(year)+'/'+str(doy)+'/'+suff+'/')
-            #    if not os.path.exists(directory_GNSS_path_const):
-            #        list_downloaded =  igs.get_rinex_from_cddis(year,doy,suff, self.gnss_dir ,list_stations=None,nfirst=n_file_downloaded[c]-n_files_ready)
-            #        for f in list_downloaded:
-            #            f_nav.append(Path(f))
-            #    else: 
-            #        
-            #        listnav_year_doy_suff = []
-            #        for file in directory_GNSS_path_const.iterdir(): 
-            #            if file.is_file(): listnav_year_doy_suff.append(file)
-            #        f_nav += listnav_year_doy_suff
-            #        n_files_ready = len(listnav_year_doy_suff)
-            #        if len(listnav_year_doy_suff)<n_file_downloaded[c]: 
-            #            list_downloaded =  igs.get_rinex_from_cddis(year,doy,suff, self.gnss_dir ,list_stations=None,nfirst=n_file_downloaded[c]-n_files_ready)
-            #            for f in list_downloaded:
-            #                if Path(f) not in f_nav:
-            #                    f_nav.append(Path(f))
-#
-            #if "C01" in self.list_sat_to_reprocess:
-            #    suff = str(year-2000)+'f'
-            #    directory_GNSS_path_const = Path(self.gnss_dir+str(year)+'/'+str(doy)+'/'+suff+'/')
-            #    if os.path.exists(directory_GNSS_path_const):
-            #        list_downloaded =  igs.get_rinex_from_cddis(year,doy,suff, self.gnss_dir ,list_stations=['guam'],nfirst=1)
-            #        for f in list_downloaded:
-            #            if Path(f) not in f_nav: f_nav.append(Path(f))
-#
- #           if "C61" in self.list_sat_to_reprocess:
- #               suff = str(year-2000)+'f'
- #               directory_GNSS_path_const = Path(self.gnss_dir+str(year)+'/'+str(doy)+'/'+suff+'/')
- #               if os.path.exists(directory_GNSS_path_const):
- #                   list_downloaded =  igs.get_rinex_from_cddis(year,doy,suff, self.gnss_dir ,list_stations=['cibg'],nfirst=1)
- #                   for f in list_downloaded:
- #                       if Path(f) not in f_nav: f_nav.append(Path(f))
-
-            #if any(s.startswith('S') for s in self.list_sat_to_reprocess):
-            #    suff = str(year-2000)+'p'
-            #    directory_GNSS_path_const = Path(self.gnss_dir+str(year)+'/'+str(doy)+'/'+suff+'/')
-            #    directory_GNSS_path_const.mkdir(exist_ok=True)
-            #    list_stations = ['nnor','mgue','harb','hrag','nklg','gamg','mas1','mgue','redu','brdc']
-            #    if os.path.exists(directory_GNSS_path_const):
-            #        list_downloaded =  igs.get_rinex_from_cddis(year,doy,suff, self.gnss_dir ,list_stations=list_stations,nfirst=len(list_stations))
-            #        for f in list_downloaded: 
-            #            if Path(f) not in f_nav: f_nav.append(Path(f))
-            #d += datetime.timedelta(days=1)
-            #continue
             suff = str(year-2000)+'p'
-            #print ('supposed to download here')
             directory_GNSS_path_const = Path(self.gnss_dir+str(year)+'/'+str_doy+'/')
             directory_GNSS_path_const.mkdir(parents=True,exist_ok=True)
-            #if os.path.exists(directory_GNSS_path_const):
 
             for station in list_stations:
                 rinex_folder = self.gnss_dir+str(year)+'/'+str_doy
                 station_file = get_file_by_prefix(rinex_folder, station)
-                #print ('station_file',station_file)
                 if station_file:
                     f_nav.append(station_file)
                     continue
                 else:
-                    #print ('download', station)
-                    list_downloaded =  igs.get_rinex_from_cddis(year,doy,suff, self.gnss_dir ,list_stations=[station],nfirst=1)
-                    #print ('downloaded!')
-                    if len(list_downloaded)==1:
-                        f_nav.append(Path(list_downloaded[0]))
+                    file_path = get_brdc_from_bkg(year, doy, self.gnss_dir, overwrite=False)
+                    if not file_path is None:
+                        f_nav.append(file_path)
                         break
-
-            #print (f_nav)
                 
             d += datetime.timedelta(days=1)
                 
@@ -773,6 +838,7 @@ class gnss:
             #svtype = head['constellation']
 
             list_df_nav = nav.read_data()
+            print (list_df_nav)
             for sv in list_df_nav.keys():
                 if sv not in self.df_nav_gnss.keys(): self.df_nav_gnss[sv] = list_df_nav[sv]
                 else: self.df_nav_gnss[sv] = pd.concat([self.df_nav_gnss[sv],list_df_nav[sv]])

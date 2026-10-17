@@ -29,11 +29,41 @@ def extract_gz_files(source_file,dest_file):
         with gzip.open(source_file, 'rb') as f_in:
             with open(dest_file, 'wb') as f_out:
                 shutil.copyfileobj(f_in, f_out)
+
+
+def get_page(session, url, max_retries=5):
+    for attempt in range(max_retries):
+        try:
+            print(f"GET {url} (attempt {attempt + 1}/{max_retries})")
+
+            with session.get(
+                url,
+                timeout=(10, 60),
+                headers={"Connection": "close"},
+            ) as r:
+                r.raise_for_status()
+                content = r.content
+
+            return BeautifulSoup(content, "html.parser")
+
+        except (
+            requests.exceptions.ConnectionError,
+            requests.exceptions.ChunkedEncodingError,
+            requests.exceptions.Timeout,
+        ) as exc:
+            if attempt == max_retries - 1:
+                raise
+
+            wait = min(5 * (2 ** attempt), 60)
+            print(f"Request failed: {exc}")
+            print(f"Retrying in {wait} seconds...")
+            time.sleep(wait)
                 
 
 
 def get_rinex_from_cddis(year,doy,suff,DEST_DIR_BASE,list_stations=None,nfirst=-1):
     
+    print ('getRinex',suff,list_stations)
     str_doy = str(doy)
     if doy<10: str_doy = '00'+str_doy
     elif doy<100: str_doy = '0'+str_doy
@@ -49,22 +79,37 @@ def get_rinex_from_cddis(year,doy,suff,DEST_DIR_BASE,list_stations=None,nfirst=-
     max_retry_time = 60  # seconds
     start_time = time.time()
     
+    print (BASE_URL)
     while True:
-        try:
+        #try:
+        if True:
             with session.get(BASE_URL, stream=True, timeout=30) as r:
+                print ('get BASE URL')
+                print("trust_env:", session.trust_env)
+                print("netrc authentication:", session.auth)
+
+                settings = session.merge_environment_settings(
+                    BASE_URL, {}, None, None, None
+                )
+                print("trust_env:", session.trust_env)
+                print("Session auth:", session.auth)
+                print("Environment settings:", settings)
                 r.raise_for_status()
-                soup = BeautifulSoup(r.text, "html.parser")
+                #r.raise_for_status()
+                #soup = BeautifulSoup(r.text, "html.parser")
+                soup = get_page(session, BASE_URL)
+                print (soup)
             break
     
-        except Exception as e:
-            elapsed = time.time() - start_time
-    
-            if elapsed >= max_retry_time:
-                print(f"Failed to contact {BASE_URL} after {elapsed:.1f} s: {e}")
-                return
+        #except Exception as e:
+        #    elapsed = time.time() - start_time
+    #
+    #        if elapsed >= max_retry_time:
+    #            print(f"Failed to contact {BASE_URL} after {elapsed:.1f} s: {e}")
+        #        return
     
             #print(f"Concat failed ({e}). Retrying in 1 second...")
-            time.sleep(1)
+    #        time.sleep(1)
         
 
     # Step 2: extract file links
@@ -108,6 +153,7 @@ def get_rinex_from_cddis(year,doy,suff,DEST_DIR_BASE,list_stations=None,nfirst=-
     ilink = 0
     # Step 3: download each file
     for file in links:
+        print (file)
 
         url = BASE_URL + file
 

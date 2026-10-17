@@ -1,6 +1,8 @@
 import sys
 import os
 
+from pathlib import Path
+
 # ---------------------------------------------------------------------------
 # LZW decompression (Unix compress format)
 # ---------------------------------------------------------------------------
@@ -145,3 +147,13 @@ def decompress_z(data: bytes) -> bytes:
  
     return bytes(bytearray(put))
  
+
+def extract_and_remove_gz(gz_path: Path) -> Path:
+    extracted_path = gz_path.with_suffix("")
+
+    with gzip.open(gz_path, "rb") as f_in, open(extracted_path, "wb") as f_out:
+        shutil.copyfileobj(f_in, f_out)
+
+    gz_path.unlink()
+
+    return extracted_path

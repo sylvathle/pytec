@@ -44,7 +44,7 @@ def stations_available_ibge(start, end):
             # Station ID
             station = fname[:9].upper()
 
-            list_stations.add(station)
+            list_stations.add(station[:4].lower())
 
         d += timedelta(days=1)
 

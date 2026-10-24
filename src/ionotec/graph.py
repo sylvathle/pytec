@@ -56,7 +56,7 @@ def plot_tracks(df,dest_folder='',lat_station=None,lon_station=None,station=''):
 
 
     for (sv, C1, C2), group in df.groupby(['sv', 'C1', 'C2']):
-        alpha = np.clip(group['elevation'].to_numpy() / (180), 0, 1)
+        alpha = np.clip(group['elevation'].to_numpy() / (math.pi/2), 0, 1)
 
         r, g, b, _ = to_rgba(sv_to_color[sv])
         rgba = np.column_stack([
@@ -89,6 +89,7 @@ def plot_tracks(df,dest_folder='',lat_station=None,lon_station=None,station=''):
 #                s=18,
 #                zorder=1) # Scatter plot should be on top
 
+    print (station)
     # Plot modifications
     ax.set_xlabel('') # No xlabel as requested
     ax.set_ylabel('VTEC (TECu)', fontsize=14) # Changed ylabel and increased font size
@@ -170,7 +171,7 @@ def plot_tracks_individuals(df,dest_folder='',station=''):
 
     ax_main.set_xlabel('')
     ax_main.set_ylabel('VTEC (TECu)', fontsize=20) # Increased font size
-    ax_main.set_title('mdo1', fontsize=25) # Increased font size
+    ax_main.set_title(station, fontsize=25) # Increased font size
     ax_main.grid(True, linestyle='--', alpha=0.7)
     ax_main.tick_params(axis='x', rotation=0, labelsize=20)
     ax_main.tick_params(axis='y', labelsize=20) # Increased font size

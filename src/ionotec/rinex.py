@@ -136,6 +136,9 @@ class rinex:
         nline = 0
         while self.isHeader:
             self.line = self.file.readline()
+            if not self.line:
+                self.isHeader = False
+                break
             nline+=1
             label = self.line[60:]
             data = self.line[:60]
@@ -376,9 +379,16 @@ class rinex:
         
         while self.line:
             self.line = self.file.readline() 
+
             if (len(self.line)>0) and (self.line[0]=='>'): 
-                print ("LEAVE FOR FILE for restarting hatanaka '>' at beginning of file", self.rinex_path)
+                #print (self.line)
+                self.isHeader=True
+                self.read_header()
+                #print ("1 LEAVE FOR FILE for restarting hatanaka '>' at beginning of file", self.rinex_path)
                 #self.file.close()
+                #break
+            #print('readline',self.line)
+            if not self.line: 
                 break
             
             ## Do not support when hatanaka is reseted
@@ -395,7 +405,7 @@ class rinex:
             if not self.file.readline(): 
                 break
             if self.line[0]=='>': 
-                print ("LEAVE FOR FILE for restarting hatanaka '>' at beginning of file")
+                print ("LEAVE FOR FILE "+ self.rinex_path +" for restarting hatanaka '>' at beginning of file")
                 #self.file.close()
                 break
 
@@ -1195,12 +1205,10 @@ class rinex:
         while self.line:
            
             #i += 1    
-            print (self.line)
             if self.line[0:3]=="   ": 
                 self.line = self.file.readline()
                 continue
             sv = self.line[0:3]
-            print (sv)
 
             #if self.line[10:14] in ['LNAV','FNAV','D1  ','D2  ']: 
             if sv[0] in ['G','E','C','J']:
